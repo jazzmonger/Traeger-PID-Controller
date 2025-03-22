@@ -1,5 +1,5 @@
 esphome:
-  name: 1-traeger-smoker
+  name: traeger-smoker
   friendly_name: 1 Traeger Smoker
   platformio_options:
     board_build.flash_mode: dio 
