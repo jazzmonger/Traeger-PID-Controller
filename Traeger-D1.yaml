@@ -1,0 +1,1316 @@
+esphome:
+  name: traeger-smoker
+  friendly_name: Traeger Smoker
+  platformio_options:
+    board_build.flash_mode: dio 
+  on_boot:
+    priority: -100
+    then:
+      - lambda: id(status_msg).publish_state("Ready"); 
+
+      # Check RTD temperature and turn on fans if needed
+      - if:
+          condition:
+            lambda: return id(a0_temperature).state > 125.0;
+          then:
+            - switch.turn_on: fans_on_off_sw
+            - lambda: id(status_msg).publish_state("Hot startup - Fans ON");
+      - script.execute: sc_monitor_temp_for_fans
+esp32:
+  board: wemos_d1_mini32  
+api:
+  reboot_timeout: 24h
+logger:
+    level: DEBUG
+    logs:
+      component: ERROR   # screen spam updates suppressed
+      ads1115.sensor: ERROR
+      sensor: ERROR 
+      number: ERROR
+ota:
+  - platform: esphome
+wifi:
+  #use_address: 192.168.1.214
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+
+web_server:    #you can remove this if you dont want to access the web server from your network
+
+#need to wire up touchscreen and add a CS pin to the display
+# touchscreen:
+#   platform: xpt2046
+#   id: mytouchscreen
+#   cs_pin: 
+#   interrupt_pin: 
+#   update_interval: 50ms
+#   calibration:
+#     x_min: 417
+#     x_max: 3579
+#     y_min: 349
+#     y_max: 3760
+#   transform:
+#     mirror_x: true
+#     mirror_y: false
+#     swap_xy: false
+#   on_touch:
+#     - lambda: |-
+#           ESP_LOGI("calibration", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+#               touch.x,
+#               touch.y,
+#               touch.x_raw,
+#               touch.y_raw
+#               );
+spi:
+  clk_pin: GPIO26 #pin 6 display SCK/touch T_CLK
+  mosi_pin: GPIO27 #pin 7 display SDI(MOSI)/touch T_DIN
+  #miso_pin: GPIO32 #pin 8 touch T_DO, display doesnt need MISO
+display:
+  - platform: ili9xxx
+    id: mydisplay
+    model: ILI9341 #TFT 2.4  
+    dc_pin: GPIO4    #pin 3 display 
+    cs_pin: GPIO25  # pin 4 display
+    reset_pin: GPIO22 #pin 5 display
+    color_palette: 8BIT
+    #LED - jumper to VCC so it is always on
+    rotation: 0
+    update_interval: 1s
+    invert_colors: false
+    show_test_card: false
+    lambda: |-
+       auto black = Color(0, 0, 0);
+       auto red = Color(255, 0, 0);
+       auto green = Color(0, 255, 0);
+       auto blue = Color(0, 0, 255);
+       auto white = Color(255, 255, 255);    
+       auto grey = Color(120, 120, 120);
+
+       //Status msg
+        it.filled_rectangle(0, 295, 230, 26, Color(80, 80, 80)); // Grey background with padding
+        it.print(1, 295, id(font20), id(status_msg).state.c_str());
+
+       it.print(10, 2, id(font30), "Heating");
+       it.print(130, 2, id(font30), "Smoking");
+       // Power button
+       if (id(go).state) {
+         // Active state - bright green with 3D effect
+         it.filled_rectangle(40, 40, 30, 42, Color(0, 200, 0));  // Main button
+         it.filled_rectangle(40, 38, 30, 2, Color(0, 255, 0));   // Highlight
+         it.filled_rectangle(40, 82, 30, 2, Color(0, 100, 0));   // Shadow
+         it.filled_rectangle(38, 40, 2, 42, Color(0, 255, 0));   // Left highlight
+         it.filled_rectangle(70, 40, 2, 42, Color(0, 100, 0));   // Right shadow
+       } else {
+         // Inactive state - dark gray with 3D effect
+         it.filled_rectangle(40, 40, 30, 42, Color(80, 80, 80)); // Main button
+         it.filled_rectangle(40, 38, 30, 2, Color(120, 120, 120)); // Highlight
+         it.filled_rectangle(40, 82, 30, 2, Color(40, 40, 40));    // Shadow
+         it.filled_rectangle(38, 40, 2, 42, Color(120, 120, 120)); // Left highlight
+         it.filled_rectangle(70, 40, 2, 42, Color(40, 40, 40));    // Right shadow
+       }
+       // Smoke button
+       if (id(smoke_mode).state) {
+         // Active state - bright blue with 3D effect
+         it.filled_rectangle(160, 40, 30, 42, Color(0, 0, 200));  // Main button
+         it.filled_rectangle(160, 38, 30, 2, Color(0, 0, 255));   // Highlight
+         it.filled_rectangle(160, 82, 30, 2, Color(0, 0, 100));   // Shadow
+         it.filled_rectangle(158, 40, 2, 42, Color(0, 0, 255));   // Left highlight
+         it.filled_rectangle(190, 40, 2, 42, Color(0, 0, 100));   // Right shadow
+       } else {
+         // Inactive state - dark gray with 3D effect
+         it.filled_rectangle(160, 40, 30, 42, Color(80, 80, 80)); // Main button
+         it.filled_rectangle(160, 38, 30, 2, Color(120, 120, 120)); // Highlight
+         it.filled_rectangle(160, 82, 30, 2, Color(40, 40, 40));    // Shadow
+         it.filled_rectangle(158, 40, 2, 42, Color(120, 120, 120)); // Left highlight
+         it.filled_rectangle(190, 40, 2, 42, Color(40, 40, 40));    // Right shadow
+       }
+       //smoker_set_temp on left
+       it.print(20, 100, id(font20), "Set Temp");
+       it.printf(20, 120, id(font45),  "%.0f°", id(smoker_set_temp).state);
+
+       //a0_temperature on right
+       it.print(130, 100, id(font20), "RTD Temp");
+       //**UPDATE** this to read from id(a0_temperature).state
+       it.printf(130, 120, id(font45), "%.0f°", id(a0_temperature).state);
+
+        // Y offset for positioning
+        int y_offset = 180;
+
+        // Draw main body of BBQ trailer
+        it.rectangle(0, y_offset-5, 230, 115, blue);
+
+        // FAN1 Draw animated fan when auger is running
+        int cx = 205;
+        if (id(auger_1_sw).state) {
+          // Calculate rotation angle based on time
+          float angle = fmod(millis() / 50.0, 360.0) * M_PI / 180.0;
+          
+          // FAN1 Center point
+          int cy = y_offset + 20;
+          
+          // Draw 4 fan blades rotated around center
+          it.filled_circle(cx, cy, 3, green);
+          for (int i = 0; i < 4; i++) {
+            float blade_angle = angle + (i * M_PI / 2);
+            float x1 = cx + 15 * cos(blade_angle);
+            float y1 = cy + 15 * sin(blade_angle);
+            float x2 = cx + 5 * cos(blade_angle + M_PI/4);
+            float y2 = cy + 5 * sin(blade_angle + M_PI/4);
+            float x3 = cx + 5 * cos(blade_angle - M_PI/4); 
+            float y3 = cy + 5 * sin(blade_angle - M_PI/4);
+            it.circle(cx, y_offset + 20, 15, white);
+            it.triangle(x1, y1, x2, y2, x3, y3, green);
+          }       
+          // Draw center circle
+          it.filled_circle(cx, cy, 3, green);
+        } else {
+          // Draw static fan when off
+          it.circle(cx, y_offset + 20, 15, green); // 
+          it.filled_circle(cx, y_offset + 20, 3, green); // 
+        }
+        // Draw rectangles around hotrod icons
+        if (id(hotrod_1_sw).state) {
+          it.rectangle(cx-15, y_offset + 50, 30, 50, white); // Hotrod 2 box outline
+          it.filled_rectangle(cx-15, y_offset + 50, 30, 12, Color(255,0,0)); // Hotrod 2 top 25% filled red
+        } else {
+          it.rectangle(cx-15, y_offset + 50, 30, 50, white); // Hotrod 2 box outline
+        }
+          // Display P-select value
+          // Display P Level description
+          it.printf(20, 180, id(font30), white, "Smoker");
+          it.printf(40, 225, id(font50), red, "%s", id(p_select).state.c_str());
+
+        // Draw page 2 with meat probe temperatures
+        if (id(page_number) == 2) {
+          // Clear previous page content
+          it.filled_rectangle(0, 0, it.get_width(), it.get_height(), COLOR_OFF);
+
+          //Status msg
+          it.filled_rectangle(0, 295, 230, 26, Color(80, 80, 80)); // Grey background with padding
+          it.print(1, 295, id(font20), id(status_msg).state.c_str());
+
+          // Draw Meat Probe 1 temperature
+          if (id(a1_temperature).state < 550.0) {
+            it.printf(70, 30, id(font50), white, "%.0f°F", id(a1_temperature).state);
+          } else {
+            it.printf(50, 30, id(font30), red, "Unplugged!");
+          }
+          it.printf(40, 80, id(font20), white, "Meat Probe 1 (top)");
+
+          // Draw Meat Probe 2 temperature  
+          if (id(a3_temperature).state < 550.0) {
+            it.printf(70, 120, id(font50), white, "%.0f°F", id(a3_temperature).state);
+          } else {
+            it.printf(50, 120, id(font30), red, "Unplugged!");
+          }
+          it.printf(20, 170, id(font20), white, "Meat Probe 2 (bottom)");         
+        }
+
+font:
+  - file: "gfonts://Roboto"
+    id: font45
+    size: 45
+  - file: "gfonts://Roboto"
+    id: font50
+    size: 50
+  - file: "gfonts://Roboto"
+    id: font40
+    size: 40
+  - file: "gfonts://Roboto"
+    id: font30
+    size: 30
+  - file: "gfonts://Roboto"
+    id: font20
+    size: 20    
+
+
+
+globals:
+  - id: adjusting_p_select
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+
+  - id: pot_action_global 
+    type: std::string
+    restore_value: yes
+    initial_value: '"heating"'
+
+  - id: p_select_index_global
+    type: int
+    restore_value: yes
+
+  - id: lighting_flag_global
+    type: bool
+    restore_value: no
+    initial_value: 'true'     
+
+  - id: smoking_flag_global
+    type: bool
+    restore_value: no
+    initial_value: 'false' 
+
+  - id: page_number
+    type: int
+    restore_value: no
+    initial_value: '1'
+
+  - id: page_1_selected_option
+    type: std::string
+    restore_value: no
+    initial_value: '"temp_setting"'    
+
+  - id: status_msg_page_1
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: status_msg_page_2
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+select:         
+  - platform: template
+    name: "P Select"
+    id: p_select
+    options:
+      - "P0"
+      - "P1"
+      - "P2"
+      - "P3"
+      - "P4"
+      - "P5"
+    initial_option: "P0"
+    restore_value: true
+    optimistic: true
+    set_action:
+      - logger.log:
+          format: "Chosen option: %s"
+          args: ["x.c_str()"]      
+    on_value: #set smoke times
+      - lambda: |-
+          id(p_select_index_global) = i;
+          switch(i) {
+            case 0: id(smoke_off_time).publish_state(40); id(smoke_on_time).publish_state(10);  break;
+            case 1: id(smoke_off_time).publish_state(50); id(smoke_on_time).publish_state(10);  break;
+            case 2: id(smoke_off_time).publish_state(60); id(smoke_on_time).publish_state(10);  break;
+            case 3: id(smoke_off_time).publish_state(70); id(smoke_on_time).publish_state(10);  break;
+            case 4: id(smoke_off_time).publish_state(80); id(smoke_on_time).publish_state(10);  break;
+            case 5: id(smoke_off_time).publish_state(90); id(smoke_on_time).publish_state(10);  break;
+          }
+i2c:
+  sda: GPIO10
+  scl: GPIO5
+  scan: true
+  id: bus_a
+
+ads1115:
+  address: 0x48
+  id: ads1115_48
+
+sensor:       
+############## ADC1_A0 ##############
+  - platform: template
+    name: "A0 Thermistor Resistance"
+    unit_of_measurement: "Ω"
+    update_interval: never
+    id: a0_thermistor_resistance
+
+  - platform: template
+    name: "A0 Temperature"
+    id: a0_temperature  
+    unit_of_measurement: "°F"
+    accuracy_decimals: 2
+    update_interval: never
+    filters:
+      - offset: -10 #negative makes it colder
+
+  - platform: ads1115
+    multiplexer: 'A0_GND'
+    name: "A0 ADS1115 to GND"
+    ads1115_id: ads1115_48
+    id: A0_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 4
+    update_interval: 1.5s
+    gain: 4.096  # measures up to 6.144v
+    filters:
+      median: 
+        window_size: 5
+        send_every: 1
+    on_value:
+      then:
+        - lambda: |-
+            // Calculate thermistor resistance
+            const float Vcc = 5.036;        // Supply voltage (adjust if 5V)
+            const float R_1 = 1036;  // Fixed resistor - increase to raise temperature
+            float Vout = id(A0_voltage).state;
+            float R_thermistor = 0;
+            
+            if (Vout > 0) {  // Avoid division by zero
+              R_thermistor = (Vout * R_1 ) / (Vcc - Vout);
+              //(148600 * (4.971-2.595)) / 2.595 
+            }
+            
+            // Calculate temperature using Steinhart-Hart equation
+            //RTD PROBE
+            float temperature = 0;
+            if (R_thermistor > 0) {
+              const float A =  9.7185046042e-02;
+              const float B = -1.8291349510e-02;
+              const float C =  9.9846598474e-05;
+              
+              float lnR = log(R_thermistor);
+              float T_kelvin = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
+              float T_celsius = T_kelvin - 273.15;
+              temperature = (T_celsius * 9.0 / 5.0) + 32.0;  // Convert to Fahrenheit
+            }
+            
+            // Publish values to the sensors
+            id(a0_thermistor_resistance).publish_state(R_thermistor);
+            id(a0_temperature).publish_state(temperature);
+
+############## ADC1_A1 ##############
+  - platform: template
+    name: "A1 Thermistor Resistance"
+    unit_of_measurement: "Ω"
+    update_interval: never
+    id: a1_thermistor_resistance
+
+  - platform: template
+    name: "A1 Temperature"
+    id: a1_temperature  
+    unit_of_measurement: "°F"
+    accuracy_decimals: 2
+    update_interval: never
+
+  - platform: ads1115
+    multiplexer: 'A1_GND'
+    name: "A1 ADS1115 to GND"
+    ads1115_id: ads1115_48
+    id: a1_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 4
+    update_interval: 2s
+    gain: 6.144  # measures up to 6.144v
+    filters:
+      median: 
+        window_size: 7
+        send_every: 1
+    on_value:
+      then:
+        - lambda: |-
+            // Calculate thermistor resistance
+            const float Vcc = 5.1;        // Supply voltage (adjust if 5V)
+            const float R_1 = 148600;  // Fixed resistor (1kΩ, adjust if different)
+            float Vout = id(a1_voltage).state;
+            float R_thermistor = 0;
+            
+            if (Vout > 0) {  // Avoid division by zero
+              R_thermistor = (Vout * R_1 ) / (Vcc - Vout);
+              //(148600 * (4.971-2.595)) / 2.595 
+            }
+            
+            // Calculate temperature using Steinhart-Hart equation
+            //THERMOWORKS PRO TEMP PROBE
+            float temperature = 0;
+            if (R_thermistor > 0) {
+              const float A = .00086732282163;
+              const float B = .00019645922453;
+              const float C = .0000001484424132;
+              
+              float lnR = log(R_thermistor);
+              float T_kelvin = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
+              float T_celsius = T_kelvin - 273.15;
+              temperature = (T_celsius * 9.0 / 5.0) + 32.0;  // Convert to Fahrenheit
+            }
+            
+            // Publish values to the sensors
+            id(a1_thermistor_resistance).publish_state(R_thermistor);
+            id(a1_temperature).publish_state(temperature);
+
+
+############## ADC1_A2 ##############
+  - platform: template
+    name: "A2 Thermistor Resistance"
+    unit_of_measurement: "Ω"
+    update_interval: never
+    id: a2_thermistor_resistance
+
+  - platform: template
+    name: "A2 Temperature"
+    id: a2_temperature  
+    unit_of_measurement: "°F"
+    accuracy_decimals: 2
+    update_interval: never
+
+  - platform: ads1115
+    multiplexer: 'A2_GND'
+    name: "A2 ADS1115 to GND"
+    ads1115_id: ads1115_48
+    id: a2_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 4
+    update_interval: 2s
+    gain: 6.144  # measures up to 6.144v
+    filters:
+      median: 
+        window_size: 7
+        send_every: 1
+    on_value:
+      then:
+        - lambda: |-
+            // Calculate thermistor resistance
+            const float Vcc = 5.1;        // Supply voltage (adjust if 5V)
+            const float R_1 = 148600;  // Fixed resistor (1kΩ, adjust if different)
+            float Vout = id(a2_voltage).state;
+            float R_thermistor = 0;
+            
+            if (Vout > 0) {  // Avoid division by zero
+              R_thermistor = (Vout * R_1 ) / (Vcc - Vout);
+              //(148600 * (4.971-2.595)) / 2.595 
+            }
+            
+            // Calculate temperature using Steinhart-Hart equation
+            //THERMOWORKS PRO TEMP PROBE
+            float temperature = 0;
+            if (R_thermistor > 0) {
+              const float A = 0.00086732282163;
+              const float B = 0.00019645922453;
+              const float C = 0.0000001484424132;
+              
+              float lnR = log(R_thermistor);
+              float T_kelvin = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
+              float T_celsius = T_kelvin - 273.15;
+              temperature = (T_celsius * 9.0 / 5.0) + 32.0;  // Convert to Fahrenheit
+            }
+            
+            // Publish values to the sensors
+            id(a2_thermistor_resistance).publish_state(R_thermistor);
+            id(a2_temperature).publish_state(temperature);
+
+############## ADC1_A3 ##############
+  - platform: template
+    name: "A3 Thermistor Resistance"
+    unit_of_measurement: "Ω"
+    update_interval: never
+    id: a3_thermistor_resistance
+
+  - platform: template
+    name: "A3 Temperature"
+    id: a3_temperature  
+    unit_of_measurement: "°F"
+    accuracy_decimals: 2
+    update_interval: never
+
+  - platform: ads1115
+    multiplexer: 'A3_GND'
+    name: "A3 ADS1115 to GND"
+    id: a3_voltage
+    ads1115_id: ads1115_48
+    unit_of_measurement: "V"
+    accuracy_decimals: 4
+    update_interval: 2s
+    gain: 6.144  # measures up to 6.144v
+    filters:
+      median: 
+        window_size: 7
+        send_every: 1
+    on_value:
+      then:
+        - lambda: |-
+            // Calculate thermistor resistance
+            const float Vcc = 5.1;        // Supply voltage (adjust if 5V)
+            const float R_1 = 148600;  // Fixed resistor (1kΩ, adjust if different)
+            float Vout = id(a3_voltage).state;
+            float R_thermistor = 0;
+            
+            if (Vout > 0) {  // Avoid division by zero
+              R_thermistor = (Vout * R_1 ) / (Vcc - Vout);
+              //(148600 * (4.971-2.595)) / 2.595 
+            }
+            
+            // Calculate temperature using Steinhart-Hart equation
+            //THERMOWORKS PRO TEMP PROBE
+            float temperature = 0;
+            if (R_thermistor > 0) {
+              const float A = 0.00086732282163;
+              const float B = 0.00019645922453;
+              const float C = 0.0000001484424132;
+              
+              float lnR = log(R_thermistor);
+              float T_kelvin = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
+              float T_celsius = T_kelvin - 273.15;
+              temperature = (T_celsius * 9.0 / 5.0) + 32.0;  // Convert to Fahrenheit
+            }
+            
+            // Publish values to the sensors
+            id(a3_thermistor_resistance).publish_state(R_thermistor);
+            id(a3_temperature).publish_state(temperature);
+
+  - platform: rotary_encoder
+    name: "Rotary Encoder"
+    pin_a: 
+      number: GPIO33 #CLK - TCK
+      inverted: true
+    pin_b: 
+      number: GPIO14 #DT  - TMS
+      inverted: false
+    id: rotary
+    on_clockwise:
+        - lambda: |-
+            if (id(page_1_selected_option) == "temp_setting") {
+              float current_temp = id(smoker_set_temp).state;
+              float increment = id(rotary_switch).state ? 5 : 25;
+              float new_temp = current_temp + increment;
+              // Round to nearest multiple of 25
+              new_temp = round(new_temp / 25) * 25;
+              if (new_temp <= id(smoker_set_temp).traits.get_max_value()) {
+                id(smoker_set_temp).publish_state(new_temp);
+              }
+            } else if (id(page_1_selected_option) == "p_setting") {
+              if (id(adjusting_p_select)) {
+                // Adjust p_select
+                auto current_index = id(p_select).index_of(id(p_select).state);
+                if (current_index.has_value()) {
+                  int next_index = (current_index.value() + 1) % 6; // 6 is the number of options
+                  id(p_select).make_call().set_index(next_index).perform();
+                }
+              } else {
+              }
+            }
+
+    on_anticlockwise:
+        - lambda: |-
+            if (id(page_number) == 1) 
+            {
+              float current_temp = id(smoker_set_temp).state;
+              float decrement = id(rotary_switch).state ? 5 : 25;
+              float new_temp = current_temp - decrement;
+              // Round to nearest multiple of 25
+              new_temp = round(new_temp / 25) * 25;
+              if (new_temp >= id(smoker_set_temp).traits.get_min_value()) 
+              {
+                id(smoker_set_temp).publish_state(new_temp);
+              }
+            } else if (id(page_number) == 2) 
+              {
+              if (id(adjusting_p_select)) 
+              {
+                // Adjust p_select
+                auto current_index = id(p_select).index_of(id(p_select).state);
+                if (current_index.has_value()) {
+                  int prev_index = (current_index.value() - 1 + 6) % 6; // 6 is the number of options
+                  id(p_select).make_call().set_index(prev_index).perform();
+                }
+              }
+            } 
+button:
+  - platform: restart #allows remote reset of tywe1s chip from home assistant or internally
+    id: restart_esp
+    name: "Controller Restart" 
+  - platform: factory_reset
+    name: Restart with Factory Default Settings    
+  - platform: template
+    name: "Emergency Stop"
+    id: sc_stop_all_smoking_button
+    on_press:
+      - script.execute: sc_stop_all_smoking
+
+text_sensor:
+  - platform: template
+    id: status_msg
+    name: "Status Message"
+
+  - platform: template
+    id: status_msg_saved_page_1
+
+switch:
+  - platform: template
+    optimistic: true
+    name: "System ON/OFF"
+    id: go
+    on_turn_on:
+      - script.execute: sc_pid_control
+      - logger.log: "System turned ON"
+      - globals.set:
+          id: lighting_flag_global
+          value: 'true'         
+      - script.execute: sc_pid_control 
+      - switch.turn_on: fans_on_off_sw
+      - script.execute: sc_light_pot
+     
+    on_turn_off:
+      - logger.log: "System turned OFF"
+      - switch.turn_off: smoke_mode    
+      - switch.turn_off: hotrod_1_sw
+      - switch.turn_off: auger_1_sw        
+      - script.execute: sc_stop_all_smoking
+      - lambda: id(status_msg).publish_state("Turned OFF"); 
+      - delay: 600s
+      - switch.turn_off: fans_on_off_sw
+#
+  - platform: template
+    optimistic: true
+    name: "Smoking Mode ON/OFF"
+    id: smoke_mode
+    on_turn_on:
+      - if:
+          condition:
+            - switch.is_on: go
+          then:
+            - switch.turn_off: hotrod_1_sw
+            - script.stop:  sc_light_pot  #turn off lighting
+            - logger.log: "Smoke Mode turned ON"
+            - lambda: id(status_msg).publish_state("Smoking Mode"); 
+            - script.stop: sc_pot_heating          
+            - script.execute: sc_pot_smoking
+    on_turn_off:
+      - if:
+          condition:
+            - switch.is_on: go
+          then:
+            - logger.log: "sw.Heating Mode"
+            - lambda: id(status_msg).publish_state("Heating Mode");
+            - script.stop: sc_pot_smoking
+            - script.execute: sc_pot_heating
+#      
+  - platform: gpio
+    pin: GPIO13
+    name: "-Fans On/Off"
+    inverted: no
+    id: fans_on_off_sw
+    restore_mode: ALWAYS_OFF 
+
+  - platform: gpio
+    pin: GPIO16 #GPIO16 
+    name: "-Auger 1 SW"
+    inverted: no
+    id: auger_1_sw
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    pin: GPIO19 
+    name: "-HotRod 1 SW"
+    inverted: no
+    id: hotrod_1_sw
+    restore_mode: ALWAYS_OFF
+
+binary_sensor:
+  - platform: gpio
+    pin: 
+      number: GPIO12 # pin TDI
+      mode:
+        input: true
+        pullup: true
+    name: "Rotary Switch"
+    id: rotary_switch
+    filters:
+      invert: 
+    on_multi_click:
+      - timing:
+        - ON for at most 1s
+        - OFF for at least 0.5s
+        then:
+          - logger.log: "Single Click - Toggling adjustment selection"
+          - lambda: |-
+               // Update status message & flag to indicate which value is being adjusted
+                id(status_msg).publish_state("     Toggling Adjustment section");
+                
+                if (id(page_1_selected_option) == "temp_setting") {
+                  id(status_msg).publish_state("     Adjusting P Level");
+                  id(page_1_selected_option) = "p_setting";
+                } 
+                
+                else {
+                  id(status_msg).publish_state("     Adjusting Temp");
+                  id(page_1_selected_option) = "temp_setting";
+                }        
+
+      - timing:
+          - ON for at least 1s
+        then:
+          - logger.log: "Rotary Switch Long Pressed Toggling Display Page"
+          - lambda: |-
+              if (id(page_number) == 1) {
+                id(status_msg_saved_page_1).publish_state(id(status_msg).state);
+                id(page_number) = 2;
+                id(status_msg).publish_state("  ");
+              } else {
+                id(page_number) = 1;
+                id(status_msg).publish_state(id(status_msg_saved_page_1).state);
+              }          
+      - timing:
+        - ON for at most 1s
+        - OFF for at most 1s
+        - ON for at most 1s
+        - OFF for at least 0.2s
+        then:
+          - logger.log: "Double Click Detected"
+
+  - platform: gpio
+    pin: 
+      number: GPIO36
+      mode:
+        input: true
+    name: "Power On Button"
+    id: btn_on
+    filters:
+      - invert:
+      - delayed_on_off: 50ms
+    on_multi_click:
+      - timing:
+          - ON for at least .75s
+        then:
+          - script.stop: sc_monitor_temp_for_fans
+          - script.execute: sc_monitor_temp_for_fans
+          - logger.log: "Long press detected"      
+          - switch.toggle: go
+          
+  - platform: gpio
+    pin: 
+      number: GPIO35
+      mode:
+        input: true
+    name: "Smoke On/Off Button" 
+    id: btn_off
+    filters:
+      - invert:
+      - delayed_on_off: 10ms
+    on_press:
+      - lambda: |-
+          if (id(go).state) {
+            if (id(smoke_mode).state) {
+              id(smoke_mode).turn_off();
+            } else {
+              id(smoke_mode).turn_on();
+            }
+          } else {
+            if (id(smoke_mode).state) {
+              id(smoke_mode).turn_off();
+            } else {
+              id(smoke_mode).turn_on(); 
+            }
+          }
+      - logger.log: "Smoke On/Off Button Pressed"
+
+  - platform: gpio
+    pin: 
+      number: GPIO34
+      mode:
+        input: true
+    name: "Temperature Up Button"
+    id: btn_temp_up
+    filters:
+      - invert:
+      - delayed_on_off: 20ms
+    on_press:
+      then:
+        - lambda: |-
+            float new_temp = id(smoker_set_temp).state + 5;
+            if (new_temp <= id(smoker_set_temp).traits.get_max_value()) {
+              id(smoker_set_temp).publish_state(new_temp);
+            }
+        - logger.log: "Temperature Up Button Pressed"
+    on_multi_click:
+    - timing:
+        - ON for at least 0.75s
+      then:
+        - logger.log: "Long press detected"
+        - while:
+            condition:
+              binary_sensor.is_on: btn_temp_up
+            then:
+              - lambda: |-
+                  float new_temp = id(smoker_set_temp).state + 5;
+                  if (new_temp <= id(smoker_set_temp).traits.get_max_value()) {
+                    id(smoker_set_temp).publish_state(new_temp);
+                  }
+              - delay: 100ms
+
+  - platform: gpio
+    pin: 
+      number: GPIO39
+      mode:
+        input: true
+    name: "Temperature Down Button"
+    id: btn_temp_down
+    filters:
+      - invert:
+      - delayed_on_off: 20ms
+    on_press:
+      then:
+        - lambda: |-
+            float new_temp = id(smoker_set_temp).state - 5;
+            if (new_temp >= id(smoker_set_temp).traits.get_min_value()) {
+              id(smoker_set_temp).publish_state(new_temp);
+            }
+        - logger.log: "Temperature Down Button Pressed"
+    on_multi_click:
+    - timing:
+        - ON for at least 0.75s
+      then:
+        - logger.log: "Long press detected"
+        - while:
+            condition:
+              binary_sensor.is_on: btn_temp_down
+            then:
+              - lambda: |-
+                  float new_temp = id(smoker_set_temp).state - 5;
+                  if (new_temp >= id(smoker_set_temp).traits.get_min_value()) {
+                    id(smoker_set_temp).publish_state(new_temp);
+                  }
+              - delay: 100ms
+
+  - platform: template
+    id: smoke_flag
+    name: "Smoking Flag"
+    lambda: |-
+        if (id(smoking_flag_global) == 1) {
+          return true;
+        } else {
+          return false;
+        }    
+  - platform: template
+    id: lighting_flag
+    name: "Lighting Flag"
+    lambda: |-
+        if (id(lighting_flag_global) == 1) {
+          return true;
+        } else {
+          return false;
+        }
+
+number:
+#PID values
+  - platform: template
+    name: "PID Proportional Band"
+    id: pid_pb
+    optimistic: true
+    min_value: 10
+    max_value: 200
+    step: 1
+    restore_value: true
+    initial_value: 60.0
+    mode: box
+    icon: mdi:tune-vertical
+    
+  - platform: template
+    name: "PID Ti (Reset Time)"
+    id: pid_ti
+    optimistic: true
+    min_value: 0
+    max_value: 600
+    step: 1
+    restore_value: true
+    initial_value: 180.0
+    mode: box
+    icon: mdi:timer-sync
+    
+  - platform: template
+    name: "PID Td (Rate Time)"
+    id: pid_td
+    optimistic: true
+    min_value: 0
+    max_value: 120
+    step: 1    
+    restore_value: true
+    initial_value: 45.0
+    mode: box
+    icon: mdi:timer-outline
+
+  - platform: template
+    name: "PID Tau"
+    id: pid_tau
+    min_value: 0
+    max_value: 600
+    step: 1
+    initial_value: 115
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "s"
+
+  - platform: template
+    name: "PID Theta"
+    id: pid_theta
+    min_value: 0
+    max_value: 120
+    step: 1
+    initial_value: 65
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "s"
+    mode: box
+    icon: mdi:tune-vertical
+
+  - platform: template
+    name: "PID Center Factor"
+    id: pid_center_factor
+    min_value: 0.0
+    max_value: 1.0
+    step: 0.0001
+    initial_value: 0.001
+    optimistic: true
+    restore_value: true
+    mode: box
+    icon: mdi:tune-vertical
+
+  - platform: template
+    name: "PID Stable Window"
+    id: pid_stable_window
+    min_value: 0
+    max_value: 50
+    step: 1
+    initial_value: 25
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "°F"
+    mode: box
+    icon: mdi:tune-vertical    
+
+  - platform: template
+    name: "Smoke Auger On Time (10s)"
+    id: smoke_on_time
+    restore_value: yes
+    min_value: 5
+    max_value: 20
+    step: 1
+    initial_value: 10
+    optimistic: true
+    unit_of_measurement: "s"
+    mode: box
+
+  - platform: template
+    name: "Smoke Auger Off Time (P val)"
+    id: smoke_off_time
+    restore_value: yes
+    min_value: 5
+    max_value: 20
+    step: 1
+    initial_value: 30
+    optimistic: true
+    unit_of_measurement: "s"
+    mode: box
+
+  - platform: template
+    name:  "PID Error Temp"
+    id: pid_error
+    min_value: 0
+    max_value: 600
+    step: 1
+    initial_value: 100
+    optimistic: true
+    restore_value: false
+    unit_of_measurement: "°F"
+
+  - platform: template
+    name: Smoker Set Temperature
+    id: smoker_set_temp
+    min_value: 140
+    max_value: 550
+    step: 5
+    initial_value: 225
+    optimistic: true
+    restore_value: true
+    update_interval: 60s
+    unit_of_measurement: "°F"
+    mode: slider
+    on_value:
+      - script.execute: sc_pid_control    
+
+#Pot lighting times
+  - platform: template
+    name: Pot lighting ON Time
+    id: pot_lighting_on_time
+    min_value: 1
+    max_value: 120
+    step: 1
+    initial_value: 60
+    optimistic: true
+    restore_value: false
+    unit_of_measurement: "s"
+    mode: slider
+    icon: mdi:timer-settings
+
+  - platform: template
+    name: Pot lighting OFF Time
+    id: pot_lighting_off_time
+    min_value: 1
+    max_value: 360
+    step: 1
+    initial_value: 600
+    optimistic: true
+    restore_value: false
+    unit_of_measurement: "s"
+    mode: slider
+    icon: mdi:timer-settings
+
+# Heating times
+  - platform: template
+    name: Augers Heating ON Time
+    id: augers_heating_on_time
+    min_value: 3
+    max_value: 90
+    step: 1
+    initial_value: 15
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "s"
+    mode: slider
+    icon: mdi:timer-settings    
+
+  - platform: template
+    name: Augers Heating OFF Time
+    id: augers_heating_off_time    
+    min_value: 0
+    max_value: 60
+    step: 1
+    initial_value: 15
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "s"
+    mode: slider
+    icon: mdi:timer-settings-outline
+
+  - platform: template
+    name: "Smoke Cycle Delay"
+    id: smoke_cycle_delay
+    min_value: 30
+    max_value: 90
+    step: 5
+    initial_value: 45
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "s"
+    mode: slider
+    icon: mdi:timer-sync
+
+
+script:
+  - id: sc_light_pot
+    mode: single
+    then:                      
+    - logger.log: "1script.light_fire executing"
+    - lambda: id(status_msg).publish_state("Lighting Fire Pot");  
+    - if:
+        condition:
+          #- binary_sensor.is_on: lighting_flag
+          - switch.is_on: go
+        then: # Light Pot
+            - delay: 0.01s   #prevents race conditions from occuring
+            - logger.log: "3SCRIPT.Lighting Pot now"
+            - lambda: id(status_msg).publish_state("Lighting Burn Pot");              
+            - switch.turn_on: hotrod_1_sw
+            - switch.turn_on: auger_1_sw
+            - delay: 90s # load up pellets
+
+            #keep the pot going until lit
+            - switch.turn_off: auger_1_sw
+            
+            - repeat:
+                count: 3
+                then:      
+                  - logger.log:
+                      format: "Keeping pot lit. Lighting Cycle counter = %d"
+                      args: ['iteration + 1']
+                  - delay: 30s
+                  - switch.turn_on: auger_1_sw
+                  - delay: 30s
+                  - switch.turn_off: auger_1_sw
+            #done keep the pot going until lit          
+            #done lighting, set flags and status message
+            - lambda: id(lighting_flag).publish_state(false);   
+            - globals.set:
+                id: lighting_flag_global
+                value: 'false'             
+            - lambda: id(status_msg).publish_state("Pot Lit");  
+            - delay: 2s
+            - lambda: id(status_msg).publish_state("Heating Mode");
+            #pot should be lit by now
+            # Get ready for heating/smoking
+#            - switch.turn_on: smoke_mode
+            - script.execute: sc_pot_heating
+            - delay: 300s
+            #keep hotrods on for 5 minutes
+            - switch.turn_off: hotrod_1_sw
+
+  - id: sc_pot_heating
+    mode: restart
+    then:
+    - logger.log: "1script.sc_pot_heating.STARTING"   
+    - while:
+        condition:
+            - switch.is_on: go
+        then:      
+          - logger.log: "1script.sc_pot_heating.ENTERING WHILE LOOP"    
+          - script.execute: sc_pid_control        
+          - logger.log: 
+              format: "Heating cycle: ON time=%.1fs, OFF time=%.1fs"
+              args: ["id(augers_heating_on_time).state", "id(augers_heating_off_time).state"]
+          - switch.turn_on: auger_1_sw    
+          - delay: !lambda "return id(augers_heating_on_time).state * 1000;"  
+          - script.execute: sc_pid_control          
+          - switch.turn_off: auger_1_sw            
+          - delay: !lambda "return id(augers_heating_off_time).state * 1000;"  
+          
+  - id: sc_pot_smoking
+    mode: restart
+    then:
+    - logger.log: "BEGIN sc_pot_smoking"    
+    - logger.log: "Starting smoke cycle"
+    - logger.log:
+        format: "Smoke settings - On time: %.1fs, Off time: %.1fs"
+        args: ['id(smoke_on_time).state', 'id(smoke_off_time).state']
+    - switch.turn_on: auger_1_sw    
+    - delay: !lambda "return id(smoke_on_time).state * 1000;"
+    - switch.turn_off: auger_1_sw               
+    - delay: !lambda "return id(smoke_off_time).state * 1000;" 
+    - logger.log: "END of sc_pot_smoking script"
+#    
+#
+  - id: sc_stop_all_smoking
+    mode: single
+    then:
+      - logger.log: "script Stop Everything"
+      - lambda: id(status_msg).publish_state("Stopping...");
+      # Stop all scripts
+      - script.stop: sc_light_pot
+      - script.stop: sc_pot_smoking
+      - script.stop: sc_pot_heating
+      # Turn off all switches
+      - switch.turn_off: hotrod_1_sw
+      - switch.turn_off: auger_1_sw
+# 
+  - id: sc_monitor_temp_for_fans
+    mode: restart
+    then:
+      - while:
+          condition:
+            - lambda: return true;
+          then:
+            - if:
+                condition:
+                  and:
+                     - switch.is_off: go
+                     - lambda: return id(a0_temperature).state < 200.0;
+                then:
+                  - if:
+                      condition:
+                        switch.is_on: fans_on_off_sw
+                      then:
+                        - switch.turn_off: fans_on_off_sw
+                        #- lambda: id(status_msg).publish_state("Cool down - Fans OFF");
+                else:
+                  - if:
+                      condition:
+                        switch.is_off: fans_on_off_sw
+                      then:
+                        - switch.turn_on: fans_on_off_sw
+                        #- lambda: id(status_msg).publish_state("Hot startup - Fans ON");
+            - delay: 1200s  # Wait 10 minutes before next check
+#
+# PID Controller
+#
+  - id: sc_pid_control
+    mode: single
+    then:
+      - logger.log: "sc_pid_control.STARTING"
+      - lambda: |-
+          // Configurable cycle parameters
+          const float cycle_time = 15.0;          // Total cycle time in seconds
+          const float min_multiplier = 0.1;       // Minimum fraction of cycle_time (e.g., 0.1 * 15 = 1.5s)
+          const float max_multiplier = 0.9;       // Maximum fraction of cycle_time (e.g., 0.9 * 15 = 13.5s)
+
+          // Persistent variables
+          static float last_temp = 0.0;           // Last temperature reading
+          static unsigned long last_time = 0;     // Last timestamp in milliseconds (unsigned long for millis())
+          static float integral = 0.0;            // Integral term for PID
+          static float last_output = 0.0;         // Last PID output
+
+          // Get current time in milliseconds
+          unsigned long current_time = millis();
+
+          // Handle first run or invalid time (e.g., millis() overflow)
+          if (last_time == 0) {
+              last_time = current_time;           // Set initial time
+              ESP_LOGD("PID", "Initializing: current_time = %lu", current_time);
+              return;
+          }
+          // Calculate time delta in seconds
+          float dt = (current_time - last_time) / 1000.0;  // Convert milliseconds to seconds
+          if (dt < 0.001) {                        // Avoid very small or zero dt
+              ESP_LOGD("PID", "dt too small: %f", dt);
+              last_time = current_time;            // Update time even if skipping
+              return;
+          }
+          // Get sensor values
+          float current_temp = id(a0_temperature).state;
+          float set_point = id(smoker_set_temp).state;
+          float pb = id(pid_pb).state;
+          float error = set_point - current_temp;
+          // Calculate PID gains (dynamic to handle changing parameters)
+          float kp = (pb != 0.0) ? -1.0 / pb : 0.0;
+          float ti = id(pid_ti).state;
+          float ki = (ti != 0.0) ? kp / ti : 0.0;
+          float kd = kp * id(pid_td).state;
+          float tau = id(pid_tau).state;
+          float theta = id(pid_theta).state;
+          float center_factor = id(pid_center_factor).state;
+          float stable_window = id(pid_stable_window).state;
+
+          // Dynamic center
+          float center = (set_point <= 240) ? (set_point * center_factor) : (set_point * center_factor * 1.2);
+
+          // Smith Predictor
+          float roc = (current_temp - last_temp) / dt;
+          float predicted_temp = current_temp + (roc * theta) * (1 - exp(-dt / tau));
+          float predicted_error = predicted_temp - set_point;
+
+          // PID Terms
+          float p = kp * predicted_error + center;
+          integral += predicted_error * dt;
+          float i = ki * integral;
+          i = std::max(std::min(i, center), -center);  // Prevent windup
+          float derivative = (predicted_temp - last_temp) / dt;
+          float d = kd * derivative;
+
+          // Calculate output
+          float output = p + i + d;
+          if (predicted_error < -pb) {
+              output = 1.0;
+          } else if (predicted_error > stable_window) {
+              output = 0.0;
+          }
+
+          // Reset integral near setpoint
+          if (abs(error) <= 3 && last_output != output) {
+              integral = 0.0;
+          }
+
+          // Calculate on and off times
+          float new_on_time = output * cycle_time;
+          float new_off_time = (1.0 - output) * cycle_time;
+
+          // Apply min and max constraints
+          float min_time = cycle_time * min_multiplier;
+          float max_time = cycle_time * max_multiplier;
+          new_on_time = std::max(min_time, std::min(max_time, new_on_time));
+          new_off_time = std::max(min_time, std::min(max_time, new_off_time));
+
+          // Publish states
+          id(pid_error).publish_state(error);
+          id(augers_heating_on_time).publish_state(new_on_time);
+          id(augers_heating_off_time).publish_state(new_off_time);
+
+          // Update last values
+          last_temp = current_temp;
+          last_time = current_time;  // Update timestamp for next run
+          last_output = output;
+
+          // Debug logging
+          ESP_LOGD("PID", "P: %.3f, I: %.3f, D: %.3f, Center: %.3f", p, i, d, center);
+          ESP_LOGD("PID", "PredErr: %.3f, IntSum: %.3f, Tau: %.3f, Theta: %.3f", predicted_error, integral, tau, theta);
+          ESP_LOGD("PID", "Pb: %.3f, Ti: %.3f, Td: %.3f", pb, ti, id(pid_td).state);
+      - logger.log: "sc_pid_control.ENDING"      
+
