@@ -90,10 +90,10 @@ display:
         it.filled_rectangle(0, 295, 230, 26, Color(80, 80, 80)); // Grey background with padding
         it.print(1, 295, id(font20), id(status_msg).state.c_str());
 
-       it.print(10, 2, id(font30), "Heating");
-       it.print(130, 2, id(font30), "Smoking");
+        it.print(20, 1, id(font30), "Heat");
+        it.print(130, 1, id(font30), "Smoke");
        // Power button
-       if (id(go).state) {
+       if (id(go).state && !id(smoke_mode).state) {
          // Active state - bright green with 3D effect
          it.filled_rectangle(40, 40, 30, 42, Color(0, 200, 0));  // Main button
          it.filled_rectangle(40, 38, 30, 2, Color(0, 255, 0));   // Highlight
@@ -569,15 +569,17 @@ sensor:
               if (new_temp <= id(smoker_set_temp).traits.get_max_value()) {
                 id(smoker_set_temp).publish_state(new_temp);
               }
-            } else if (id(page_1_selected_option) == "p_setting") {
-              if (id(adjusting_p_select)) {
-                // Adjust p_select
-                auto current_index = id(p_select).index_of(id(p_select).state);
-                if (current_index.has_value()) {
-                  int next_index = (current_index.value() + 1) % 6; // 6 is the number of options
-                  id(p_select).make_call().set_index(next_index).perform();
-                }
-              } else {
+            } else if (id(page_1_selected_option) == "p_setting") 
+              {
+                if (id(adjusting_p_select)) 
+                {
+                  // Adjust p_select
+                  auto current_index = id(p_select).index_of(id(p_select).state);
+                  if (current_index.has_value()) {
+                    int next_index = (current_index.value() + 1) % 6; // 6 is the number of options
+                    id(p_select).make_call().set_index(next_index).perform();
+                  }
+                } else {
               }
             }
 
@@ -594,7 +596,7 @@ sensor:
               {
                 id(smoker_set_temp).publish_state(new_temp);
               }
-            } else if (id(page_number) == 2) 
+            } else if (id(page_1_selected_option) == "p_setting")  
               {
               if (id(adjusting_p_select)) 
               {
@@ -666,6 +668,7 @@ switch:
             - lambda: id(status_msg).publish_state("Smoking Mode"); 
             - script.stop: sc_pot_heating          
             - script.execute: sc_pot_smoking
+            - switch.turn_on: fans_on_off_sw
     on_turn_off:
       - if:
           condition:
@@ -1157,17 +1160,20 @@ script:
   - id: sc_pot_smoking
     mode: restart
     then:
-    - logger.log: "BEGIN sc_pot_smoking"    
-    - logger.log: "Starting smoke cycle"
-    - logger.log:
-        format: "Smoke settings - On time: %.1fs, Off time: %.1fs"
-        args: ['id(smoke_on_time).state', 'id(smoke_off_time).state']
-    - switch.turn_on: auger_1_sw    
-    - delay: !lambda "return id(smoke_on_time).state * 1000;"
-    - switch.turn_off: auger_1_sw               
-    - delay: !lambda "return id(smoke_off_time).state * 1000;" 
-    - logger.log: "END of sc_pot_smoking script"
-#    
+    - while:
+        condition:
+          - switch.is_on: go
+        then:
+          - logger.log: "BEGIN sc_pot_smoking"    
+          - logger.log:
+              format: "Smoke settings - On time: %.1fs, Off time: %.1fs"
+              args: ['id(smoke_on_time).state', 'id(smoke_off_time).state']
+          - switch.turn_on: auger_1_sw    
+          - delay: !lambda "return id(smoke_on_time).state * 1000;"
+          - switch.turn_off: auger_1_sw               
+          - delay: !lambda "return id(smoke_off_time).state * 1000;" 
+          - logger.log: "END of sc_pot_smoking script"
+    #    
 #
   - id: sc_stop_all_smoking
     mode: single
@@ -1193,7 +1199,7 @@ script:
                 condition:
                   and:
                      - switch.is_off: go
-                     - lambda: return id(a0_temperature).state < 200.0;
+                     - lambda: return id(a0_temperature).state < 100.0;
                 then:
                   - if:
                       condition:
