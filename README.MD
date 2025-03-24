@@ -7,6 +7,7 @@ While I respect the platform for what it is, I'm not a huge Raspberry Pi fan and
 Some key attributes of this scaled down version:
 
 * its written in ESPHome, so its easy to understand and modify
+* can be used standalone or with Home Assistant
 * it integrates seamlessly with Home Assistant and all functions are controllable via a LoveLace dashboard both on a PC and in the Home Assistant app.
 * it emulates the existing new Trager controllers in all functions and adds several new functions
 * it controls 1 auger, 1 hotrod & 1 fan found on the vast majority of pellet smokers
