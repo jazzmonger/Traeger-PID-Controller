@@ -6,6 +6,9 @@ The inspiration for much of this project came from the excellent work done be @N
 
 While I respect the platform for what it is, I'm not a huge Raspberry Pi fan and I wanted something based on an ESP32 and ESPHome that would integrate seamlessly into Home Assistant. So, this project was born.
 ![Image](https://github.com/user-attachments/assets/69c675f4-6093-4a4e-b6c3-11c539b2dabf)
+
+![Image](https://github.com/user-attachments/assets/15380ceb-184d-453d-b789-48c1be9da0f8)
+
 Some key attributes of this scaled down version:
 
 * its written in ESPHome, so its easy to understand and modify
