@@ -1,6 +1,6 @@
 esphome:
-  name: traeger-smoker
-  friendly_name: Traeger Smoker
+  name: 1-traeger-smoker
+  friendly_name: 1 Traeger Smoker
   platformio_options:
     board_build.flash_mode: dio 
   on_boot:
@@ -38,29 +38,30 @@ wifi:
 web_server:    #you can remove this if you dont want to access the web server from your network
 
 #need to wire up touchscreen and add a CS pin to the display
-# touchscreen:
-#   platform: xpt2046
-#   id: mytouchscreen
-#   cs_pin: 
-#   interrupt_pin: 
-#   update_interval: 50ms
-#   calibration:
-#     x_min: 417
-#     x_max: 3579
-#     y_min: 349
-#     y_max: 3760
-#   transform:
-#     mirror_x: true
-#     mirror_y: false
-#     swap_xy: false
-#   on_touch:
-#     - lambda: |-
-#           ESP_LOGI("calibration", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
-#               touch.x,
-#               touch.y,
-#               touch.x_raw,
-#               touch.y_raw
-#               );
+
+touchscreen:
+  platform: xpt2046
+  id: mytouchscreen
+  cs_pin: GPIO23
+  interrupt_pin: GPIO21
+  update_interval: 50ms
+  calibration:
+    x_min: 417
+    x_max: 3579
+    y_min: 349
+    y_max: 3760
+  transform:
+    mirror_x: true
+    mirror_y: false
+    swap_xy: false
+  on_touch:
+    - lambda: |-
+          ESP_LOGI("calibration", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+              touch.x,
+              touch.y,
+              touch.x_raw,
+              touch.y_raw
+              );
 spi:
   clk_pin: GPIO26 #pin 6 display SCK/touch T_CLK
   mosi_pin: GPIO27 #pin 7 display SDI(MOSI)/touch T_DIN
@@ -69,10 +70,10 @@ display:
   - platform: ili9xxx
     id: mydisplay
     model: ILI9341 #TFT 2.4  
-    dc_pin: GPIO4    #pin 3 display 
-    cs_pin: GPIO25  # pin 4 display
-    reset_pin: GPIO22 #pin 5 display
-    color_palette: 8BIT
+    dc_pin: GPIO4    
+    cs_pin: GPIO25  
+    reset_pin: GPIO22 
+    #color_palette: 8BIT
     #LED - jumper to VCC so it is always on
     rotation: 0
     update_interval: 1s
@@ -1225,7 +1226,7 @@ script:
       - lambda: |-
           // Configurable cycle parameters
           const float cycle_time = 15.0;          // Total cycle time in seconds
-          const float min_multiplier = 0.1;       // Minimum fraction of cycle_time (e.g., 0.1 * 15 = 1.5s)
+          const float min_multiplier = 0.033;       // Minimum fraction of cycle_time (e.g., 0.1 * 15 = 1.5s)
           const float max_multiplier = 0.9;       // Maximum fraction of cycle_time (e.g., 0.9 * 15 = 13.5s)
 
           // Persistent variables
