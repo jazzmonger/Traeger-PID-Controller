@@ -12,7 +12,7 @@ While I respect the platform for what it is, I'm not a huge Raspberry Pi fan and
 Some key attributes of this scaled down version:
 
 * its written in ESPHome, so its easy to understand and modify
-* can be used standalone or with Home Assistant
+* It can be used standalone or with Home Assistant
 * it integrates seamlessly with Home Assistant and all functions are controllable via a LoveLace dashboard both on a PC and in the Home Assistant app.
 * it emulates the existing new Trager controllers in all functions and adds several new functions
 * it controls 1 auger, 1 hotrod & 1 fan found on the vast majority of pellet smokers
@@ -26,7 +26,7 @@ Some key attributes of this scaled down version:
 * it allows dynamic configuration of ALL paramaters so it is infinitly tuneable to any pellet smoker
 * it also allows for both touch screen control of all functions as well as optional individual buttons for control.
 * it adds an optional VL53L0X Time of Flight (TOF) Sensor sensor to measure hopper pellet levels
-* Circuit board for scaled down versiinshould be approximately the same size as the Traeger controller allowing easy retrofit installation.
+* Circuit board for this scaled down version is exactly the same size as the Traeger controller allowing easy retrofit installation.
 
 Outstanding temperature control even when opening the lid of the smoker.  Very little overshoot when adjusting temperatures (Smith Predictor).
 Fully adjustable PID Params (advanced)
