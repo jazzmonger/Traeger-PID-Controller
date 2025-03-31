@@ -1,5 +1,7 @@
 This project is for a generic ESP32 Based Traeger Pellet Smoker/Grill controller that can be used on any smoker/grill that has an auger, hotrod and fan used for control. Full Home Assistant control completes it and the sky is the limit on what can be done with it using automations.
 
+![Image](https://github.com/user-attachments/assets/70b09003-f8f5-4c89-b655-66b821db657c)
+
 The inspiration for much of this project came from the excellent work done be @Nebhead and the PiSmoker project (https://github.com/nebhead/PiFire) based on the Raspberry Pi. Their Discord channel is here https://discord.com/channels/1027346882156052550/1027348991135985796
 
 While I respect the platform for what it is, I'm not a huge Raspberry Pi fan and I wanted something based on an ESP32 and ESPHome that would integrate seamlessly into Home Assistant. So, this project was born.
