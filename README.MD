@@ -1,3 +1,5 @@
+*note* project has bee upgrade to an ESP32S3. Touch and display are just too much for the little D1. S3 handles it no problem.  Ill upload new design files once I get the circuit boards in a couple of weeks.
+
 This project is for a generic ESP32 Based Traeger Pellet Smoker/Grill controller that can be used on any smoker/grill that has an auger, hotrod and fan used for control. Full Home Assistant control completes it and the sky is the limit on what can be done with it using automations.  See my ESPHome Forums post for discussions https://community.home-assistant.io/t/generic-traeger-smoker-grill-controller/867494
 
 ![Image](https://github.com/user-attachments/assets/70b09003-f8f5-4c89-b655-66b821db657c)
