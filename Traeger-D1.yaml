@@ -1,7 +1,7 @@
-# updated 6/3/25
+# updated 8/15/25
 # added flame-out relighting w/ max6675 sensor
 # PID values that work really well:
-# Pb=20 Ti=110 Td=15
+# Pb=60 Ti=180 Td=45
 # theta=12 tau=300 
 # center= 0.0 stable win=8
 
@@ -27,7 +27,7 @@ esphome:
             - lambda: id(status_msg).publish_state("Ready!");
       #- script.execute: sc_monitor_temp_for_fans
 packages:
-    touchscreen: !include common/IPS4.0_touchscreen (esp32S3).yaml
+    touchscreen: !include common/IPS4.0_touchscreen_(esp32S3_Trager_1pot).yaml
 
 psram:
   mode: octal
@@ -318,8 +318,10 @@ sensor:
             ESP_LOGD("Firepot", "Heating mode: Turning on hotrod - firepot temperature below 300F");
             return 1.0;
           } else if (id(firepot_temperature).state > 162.8) {
-            id(hotrod_1_sw).turn_off();
-            ESP_LOGD("Firepot", "Heating mode: Turning off hotrod - firepot temperature above 325F");
+            if (id(hotrod_1_sw).state) {
+              id(hotrod_1_sw).turn_off();
+              ESP_LOGD("Firepot", "Heating mode: Turning off hotrod - firepot temperature above 325F");
+            }
             return 0.0;
           }
         } else {
@@ -329,10 +331,12 @@ sensor:
               id(hotrod_1_sw).turn_on();
             }
             ESP_LOGD("Firepot", "SMOKE MODE:Turning on hotrod - firepot temperature below 160F");
-            return 1.0;
+            return 1.0;         
           } else if (id(firepot_temperature).state > 93.3) {
-            id(hotrod_1_sw).turn_off();
-            ESP_LOGD("Firepot", "SMOKE MODE:Turning off hotrod - firepot temperature above 200F"); 
+            if (id(hotrod_1_sw).state) {
+              id(hotrod_1_sw).turn_off();
+              ESP_LOGD("Firepot", "SMOKE MODE:Turning off hotrod - firepot temperature above 200F");
+            }
             return 0.0;
           }
         }
@@ -370,7 +374,7 @@ sensor:
         return 0.0;
       }   
     filters:
-      - offset: +20
+      - offset: +10
 
   # - platform: vl53l0x  
   #   name: "Pellet Level"
