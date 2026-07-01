@@ -1,0 +1,119 @@
+# Shared Traeger smoker UI (lambda + fonts). Hardware/sim YAML extends mydisplay.
+display:
+  - id: mydisplay
+    update_interval: 0.5s
+    lambda: |-
+       auto black = Color(0, 0, 0);
+       auto red = Color(255, 0, 0);
+       auto green = Color(0, 255, 0);
+       auto blue = Color(0, 0, 255);
+       auto white = Color(255, 255, 255);
+       auto grey = Color(120, 120, 120);
+
+       //Status msg
+        it.filled_rectangle(0, 295, 230, 26, Color(80, 80, 80)); // Grey background with padding
+        it.print(1, 295, id(font20), id(status_msg).state.c_str());
+
+        it.print(20, 1, id(font30), "Heat");
+        it.print(130, 1, id(font30), "Smoke");
+       // Power button
+       if (id(go).state && !id(smoke_mode).state) {
+         // Active state - bright green with 3D effect
+         it.filled_rectangle(40, 40, 30, 42, Color(0, 200, 0));  // Main button
+         it.filled_rectangle(40, 38, 30, 2, Color(0, 255, 0));   // Highlight
+         it.filled_rectangle(40, 82, 30, 2, Color(0, 100, 0));   // Shadow
+         it.filled_rectangle(38, 40, 2, 42, Color(0, 255, 0));   // Left highlight
+         it.filled_rectangle(70, 40, 2, 42, Color(0, 100, 0));   // Right shadow
+       } else {
+         // Inactive state - dark gray with 3D effect
+         it.filled_rectangle(40, 40, 30, 42, Color(80, 80, 80)); // Main button
+         it.filled_rectangle(40, 38, 30, 2, Color(120, 120, 120)); // Highlight
+         it.filled_rectangle(40, 82, 30, 2, Color(40, 40, 40));    // Shadow
+         it.filled_rectangle(38, 40, 2, 42, Color(120, 120, 120)); // Left highlight
+         it.filled_rectangle(70, 40, 2, 42, Color(40, 40, 40));    // Right shadow
+       }
+       // Smoke button
+       if (id(smoke_mode).state) {
+         // Active state - bright blue with 3D effect
+         it.filled_rectangle(160, 40, 30, 42, Color(0, 0, 200));  // Main button
+         it.filled_rectangle(160, 38, 30, 2, Color(0, 0, 255));   // Highlight
+         it.filled_rectangle(160, 82, 30, 2, Color(0, 0, 100));   // Shadow
+         it.filled_rectangle(158, 40, 2, 42, Color(0, 0, 255));   // Left highlight
+         it.filled_rectangle(190, 40, 2, 42, Color(0, 0, 100));   // Right shadow
+       } else {
+         // Inactive state - dark gray with 3D effect
+         it.filled_rectangle(160, 40, 30, 42, Color(80, 80, 80)); // Main button
+         it.filled_rectangle(160, 38, 30, 2, Color(120, 120, 120)); // Highlight
+         it.filled_rectangle(160, 82, 30, 2, Color(40, 40, 40));    // Shadow
+         it.filled_rectangle(158, 40, 2, 42, Color(120, 120, 120)); // Left highlight
+         it.filled_rectangle(190, 40, 2, 42, Color(40, 40, 40));    // Right shadow
+       }
+       //smoker_set_temp on left
+       it.print(20, 100, id(font20), "Set Temp");
+       it.printf(20, 120, id(font45),  "%.0f°", id(smoker_set_temp).state);
+
+       //a0_temperature on right
+       it.print(130, 100, id(font20), "RTD Temp");
+       it.printf(130, 120, id(font45), "%.0f°", id(rtd_temperature_f).state);
+
+        // Y offset for positioning
+        int y_offset = 180;
+
+        // Draw main body of BBQ trailer
+        it.rectangle(0, y_offset-5, 230, 115, blue);
+
+        // FAN1 Draw animated fan when auger is running
+        int cx = 205;
+        if (id(auger_1_sw).state) {
+          // Calculate rotation angle based on time
+          float angle = fmod(millis() / 50.0, 360.0) * M_PI / 180.0;
+
+          // FAN1 Center point
+          int cy = y_offset + 20;
+
+          // Draw 4 fan blades rotated around center
+          it.filled_circle(cx, cy, 3, green);
+          for (int i = 0; i < 4; i++) {
+            float blade_angle = angle + (i * M_PI / 2);
+            float x1 = cx + 15 * cos(blade_angle);
+            float y1 = cy + 15 * sin(blade_angle);
+            float x2 = cx + 5 * cos(blade_angle + M_PI/4);
+            float y2 = cy + 5 * sin(blade_angle + M_PI/4);
+            float x3 = cx + 5 * cos(blade_angle - M_PI/4);
+            float y3 = cy + 5 * sin(blade_angle - M_PI/4);
+            it.circle(cx, y_offset + 20, 15, white);
+            it.triangle(x1, y1, x2, y2, x3, y3, green);
+          }
+          // Draw center circle
+          it.filled_circle(cx, cy, 3, green);
+        } else {
+          // Draw static fan when off
+          it.circle(cx, y_offset + 20, 15, green);
+          it.filled_circle(cx, y_offset + 20, 3, green);
+        }
+        // Draw rectangles around hotrod icons
+        if (id(hotrod_1_sw).state) {
+          it.rectangle(cx-15, y_offset + 50, 30, 50, white);
+          it.filled_rectangle(cx-15, y_offset + 50, 30, 12, Color(255,0,0));
+        } else {
+          it.rectangle(cx-15, y_offset + 50, 30, 50, white);
+        }
+          it.printf(20, 180, id(font30), white, "Smoker");
+          it.printf(40, 225, id(font50), red, "%s", id(p_select).state.c_str());
+
+font:
+  - file: "gfonts://Roboto"
+    id: font45
+    size: 45
+  - file: "gfonts://Roboto"
+    id: font50
+    size: 50
+  - file: "gfonts://Roboto"
+    id: font40
+    size: 40
+  - file: "gfonts://Roboto"
+    id: font30
+    size: 30
+  - file: "gfonts://Roboto"
+    id: font20
+    size: 20

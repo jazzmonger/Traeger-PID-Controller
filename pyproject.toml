@@ -1,0 +1,11 @@
+[project]
+name = "traeger-controller"
+version = "0.1.0"
+description = "ESPHome config for Traeger PID controller (ESP32-S3)"
+requires-python = ">=3.12"
+dependencies = [
+  "esphome==2025.12.5",
+]
+
+[tool.uv]
+package = false
