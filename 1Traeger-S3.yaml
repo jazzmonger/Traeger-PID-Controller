@@ -7,27 +7,23 @@ esphome:
   platformio_options:
     board_build.flash_mode: dio 
   on_boot:
-    - priority: 800
-      then:
-        - logger.log: "=== MANUAL DISPLAY HARD RESET ==="
-        - output.turn_off: tft_reset
-        - delay: 150ms
-        - output.turn_on: tft_reset
-        - delay: 120ms
-    - priority: -100
-      then:
-        - lambda: id(status_msg).publish_state("Ready");
-        - if:
-            condition:
-              lambda: |-
-                float temp = id(rtd_temperature_f).state;
-                return !isnan(temp) && temp > 175.0;
-            then:
-              - switch.turn_on: fans_on_off_sw
-              - lambda: id(status_msg).publish_state("Hot startup - Fans ON");
-            else:
-              - switch.turn_off: fans_on_off_sw
-              - lambda: id(status_msg).publish_state("Ready!");
+    priority: -100
+    then:
+      - lambda: id(status_msg).publish_state("Ready");
+      - if:
+          condition:
+            lambda: |-
+              float temp = id(rtd_temperature_f).state;
+              return !isnan(temp) && temp > 175.0;
+          then:
+            - switch.turn_on: fans_on_off_sw
+            - lambda: id(status_msg).publish_state("Hot startup - Fans ON");
+          else:
+            - switch.turn_off: fans_on_off_sw
+            - lambda: id(status_msg).publish_state("Ready!");
+      # ILI9341 often wakes blank until rails settle; re-init a few seconds later
+      - delay: 3s
+      - script.execute: sc_tft_reinit
 packages:
     touchscreen: !include common/IPS4.0_touchscreen_(esp32S3_Trager_1pot).yaml
     display_ui: !include common/1Traeger-S3_display.yaml
@@ -75,12 +71,6 @@ spi:
     mosi_pin: GPIO2 #SDI-max / display /touch T_DIN
     miso_pin: GPIO4 #SDO-max / touch T_DO, display doesnt need MISO
 
-output:
-  - platform: gpio
-    pin: GPIO6
-    id: tft_reset
-    inverted: false
-
 display:
   - id: !extend mydisplay
     platform: ili9xxx
@@ -89,6 +79,7 @@ display:
     model: ILI9341 #TFT 2.4
     dc_pin: GPIO5
     cs_pin: GPIO7
+    reset_pin: GPIO6
     color_palette: 8BIT
     #LED - jumper to VCC so it is always on
     rotation: 0
@@ -841,6 +832,14 @@ number:
 
 
 script:
+  # Second HW reset + full ILI9341 re-init after power rails settle
+  - id: sc_tft_reinit
+    mode: single
+    then:
+      - logger.log: "TFT delayed re-init"
+      - lambda: |-
+          id(mydisplay).setup();
+
   - id: sc_adjust_set_temp
     mode: single
     parameters:
