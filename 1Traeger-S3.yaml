@@ -241,13 +241,26 @@ sensor:
     update_interval: 1s
     lambda: |-
       if (id(rtd_temperature_c).has_state() && !isnan(id(rtd_temperature_c).state)) {
-        float raw = id(rtd_temperature_c).state * 1.8 + 32.0;
-        // Polynomial cal vs RFX reference (2026-07-10, ramp to 350F+)
-        return -0.0011541427f * raw * raw + 1.72105414f * raw - 64.8585f;
+        return id(rtd_temperature_c).state * 1.8 + 32.0;
       }
       return NAN;
     filters:
       - filter_out: NaN
+      - calibrate_linear:
+          method: exact
+          datapoints:
+            - 151.2 -> 153.7
+            - 152.7 -> 155.6
+            - 187.3 -> 196.9
+            - 204.9 -> 227.0
+            - 217.5 -> 251.6
+            - 240.5 -> 278.8
+            - 252.9 -> 289.8
+            - 266.4 -> 309.7
+            - 276.7 -> 322.6
+            - 292.0 -> 342.4
+            - 301.0 -> 346.0
+            - 302.5 -> 350.3
 
   # - platform: vl53l0x  
   #   name: "Pellet Level"
