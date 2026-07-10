@@ -10,6 +10,19 @@ display:
        auto white = Color(255, 255, 255);
        auto grey = Color(120, 120, 120);
 
+       if (id(lighting_failed_dialog)) {
+         it.filled_rectangle(0, 0, 240, 320, Color(0, 0, 0));
+         it.filled_rectangle(8, 70, 224, 190, Color(30, 30, 30));
+         it.rectangle(8, 70, 224, 190, red);
+         auto msg_color = ((millis() / 500) % 2 == 0) ? red : white;
+         it.print(18, 95, id(font20), msg_color, "Lighting failed,");
+         it.print(18, 120, id(font20), msg_color, "are pellets loaded?");
+         it.filled_rectangle(70, 210, 100, 40, Color(0, 140, 0));
+         it.rectangle(70, 210, 100, 40, white);
+         it.print(100, 218, id(font30), white, "OK");
+         return;
+       }
+
        //Status msg
         it.filled_rectangle(0, 295, 230, 26, Color(80, 80, 80)); // Grey background with padding
         it.print(1, 295, id(font20), id(status_msg).state.c_str());

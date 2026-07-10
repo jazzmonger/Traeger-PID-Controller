@@ -1,49 +1,40 @@
-# PID values that work really well:
-# Pb=55 Ti=180 Td=45 theta=12 tau=300 center=0.0 stable win=25
-
-substitutions:
-  fan_cooldown_f: "175.0"
-  temp_coarse_threshold_f: "225"
-  temp_fine_step_f: "5"
-  temp_coarse_step_f: "25"
-  temp_min_f: "140"
-  firepot_heat_on_c: "148.9"
-  firepot_heat_off_c: "162.8"
-  firepot_smoke_on_c: "71.1"
-  firepot_smoke_off_c: "93.3"
-  fan_shutdown_delay_s: "1200"
-  pid_cycle_time_s: "15.0"
-  p_select_count: "6"
+# Traeger S3 smoker controller
+# PID defaults (2026-07-09 cook): Pb=60 Ti=150 Td=40 tau=115 theta=25 center=0.001 stable_window=10
 
 esphome:
   name: 1-traeger-smoker
   friendly_name: 1 Traeger Smoker
   platformio_options:
-    board_build.flash_mode: dio
+    board_build.flash_mode: dio 
   on_boot:
-    priority: -100
-    then:
-      - lambda: id(status_msg).publish_state("Ready");
-      - if:
-          condition:
-            lambda: |-
-              return id(rtd_temperature_f).has_state() &&
-                     id(rtd_temperature_f).state > ${fan_cooldown_f};
-          then:
-            - switch.turn_on: fans_on_off_sw
-            - lambda: id(status_msg).publish_state("Hot startup - Fans ON");
-          else:
-            - switch.turn_off: fans_on_off_sw
-            - lambda: id(status_msg).publish_state("Ready!");
-
+    - priority: 800
+      then:
+        - logger.log: "=== MANUAL DISPLAY HARD RESET ==="
+        - output.turn_off: tft_reset
+        - delay: 150ms
+        - output.turn_on: tft_reset
+        - delay: 120ms
+    - priority: -100
+      then:
+        - lambda: id(status_msg).publish_state("Ready");
+        - if:
+            condition:
+              lambda: |-
+                float temp = id(rtd_temperature_f).state;
+                return !isnan(temp) && temp > 175.0;
+            then:
+              - switch.turn_on: fans_on_off_sw
+              - lambda: id(status_msg).publish_state("Hot startup - Fans ON");
+            else:
+              - switch.turn_off: fans_on_off_sw
+              - lambda: id(status_msg).publish_state("Ready!");
 packages:
-  touchscreen: !include common/IPS4.0_touchscreen_(esp32S3_Trager_1pot).yaml
-  display_ui: !include common/1Traeger-S3_display.yaml
+    touchscreen: !include common/IPS4.0_touchscreen_(esp32S3_Trager_1pot).yaml
+    display_ui: !include common/1Traeger-S3_display.yaml
 
 psram:
   mode: octal
   speed: 80MHz
-
 esp32:
   board: esp32-s3-devkitc-1
   variant: esp32s3
@@ -53,77 +44,90 @@ esp32:
 
 api:
   reboot_timeout: 24h
-
 logger:
-  level: INFO
-  logs:
-    component: none
-    api.connection: ERROR
-    max31865: INFO
-    max6675: INFO
-    ads1115.sensor: ERROR
-    sensor: ERROR
-    number: ERROR
-    ili9xxx: ERROR
-    FT63X6: ERROR
-    ft63x6: INFO
-    spi: ERROR
-    touchscreen: ERROR
-    I2C: ERROR
-    esp-idf: WARN
+    level: INFO
+    logs:
+      component: none
+      api.connection: ERROR
+      max31865: WARN
+      max6675: WARN
+      ads1115.sensor: ERROR
+      sensor: ERROR 
+      number: ERROR
+      ili9xxx: ERROR
+      FT63X6: ERROR
+      ft63x6: WARN
+      spi: ERROR
+      touchscreen: ERROR
+      I2C: ERROR
+      esp-idf: WARN
 
 ota:
   - platform: esphome
-
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   fast_connect: true
 
-web_server:
-
 spi:
   - id: spi_bus
-    clk_pin: GPIO1
-    mosi_pin: GPIO2
-    miso_pin: GPIO4
+    clk_pin: GPIO1 #display SCK/touch T_CLK
+    mosi_pin: GPIO2 #SDI-max / display /touch T_DIN
+    miso_pin: GPIO4 #SDO-max / touch T_DO, display doesnt need MISO
+
+output:
+  - platform: gpio
+    pin: GPIO6
+    id: tft_reset
+    inverted: false
 
 display:
   - id: !extend mydisplay
     platform: ili9xxx
     spi_id: spi_bus
     data_rate: 20MHz
-    model: ILI9341
+    model: ILI9341 #TFT 2.4
     dc_pin: GPIO5
     cs_pin: GPIO7
-    reset_pin: GPIO6
     color_palette: 8BIT
+    #LED - jumper to VCC so it is always on
     rotation: 0
     invert_colors: true
     show_test_card: false
 
+
+
 globals:
+  - id: p_select_index_global
+    type: int
+    restore_value: yes
+
   - id: lighting_flag_global
     type: bool
     restore_value: no
     initial_value: 'true'
 
-  - id: fan_manual_override
+  - id: lighting_failed_dialog
     type: bool
     restore_value: no
     initial_value: 'false'
 
-  - id: page_number
+  - id: lighting_start_ms
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+
+  - id: lighting_retry_count
     type: int
     restore_value: no
-    initial_value: '1'
+    initial_value: '0'
 
   - id: page_1_selected_option
     type: std::string
     restore_value: no
     initial_value: '"temp_setting"'
 
-select:
+select:         
   - platform: template
     name: "P Select"
     id: p_select
@@ -140,17 +144,20 @@ select:
     set_action:
       - logger.log:
           format: "Chosen option: %s"
-          args: ["x.c_str()"]
-    on_value:
+          args: ["x.c_str()"]      
+    on_value: #set smoke times
       - lambda: |-
-          static const int off_times[] = {40, 50, 60, 70, 80, 90};
-          if (i >= 0 && i < ${p_select_count}) {
-            id(smoke_off_time).publish_state(off_times[i]);
-            id(smoke_on_time).publish_state(10);
+          id(p_select_index_global) = i;
+          switch(i) {
+            case 0: id(smoke_off_time).publish_state(40); id(smoke_on_time).publish_state(10);  break;
+            case 1: id(smoke_off_time).publish_state(50); id(smoke_on_time).publish_state(10);  break;
+            case 2: id(smoke_off_time).publish_state(60); id(smoke_on_time).publish_state(10);  break;
+            case 3: id(smoke_off_time).publish_state(70); id(smoke_on_time).publish_state(10);  break;
+            case 4: id(smoke_off_time).publish_state(80); id(smoke_on_time).publish_state(10);  break;
+            case 5: id(smoke_off_time).publish_state(90); id(smoke_on_time).publish_state(10);  break;
           }
-
-i2c:
-  - id: i2c_bus
+i2c: 
+  - id:  i2c_bus
     sda: GPIO9
     scl: GPIO40
     scan: true
@@ -161,37 +168,72 @@ ads1115:
   address: 0x48
   id: ads1115_48
 
-sensor:
+sensor:  
   - platform: template
     name: "Firepot Monitor"
     id: firepot_monitor
-    internal: true
-    entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      if (!id(go).state || !id(firepot_temperature).has_state()) {
+      // Ignition owns the hot rod while lighting_flag_global is true
+      if (!id(go).state || id(lighting_flag_global)) {
         return 0.0;
       }
-      float fp = id(firepot_temperature).state;
       if (!id(smoke_mode).state) {
-        if (fp < ${firepot_heat_on_c}) return 1.0;
-        if (fp > ${firepot_heat_off_c}) return 0.0;
+        // Heating mode: 300F = 148.9C, 325F = 162.8C
+        if (id(firepot_temperature_c).state < 148.9) {
+          if (!id(hotrod_1_sw).state) {
+            id(hotrod_1_sw).turn_on();
+          }
+          ESP_LOGD("Firepot", "Heating mode: hotrod ON - firepot below 300F");
+          return 1.0;
+        } else if (id(firepot_temperature_c).state > 162.8) {
+          if (id(hotrod_1_sw).state) {
+            id(hotrod_1_sw).turn_off();
+            ESP_LOGD("Firepot", "Heating mode: hotrod OFF - firepot above 325F");
+          }
+          return 0.0;
+        }
       } else {
-        if (fp < ${firepot_smoke_on_c}) return 1.0;
-        if (fp > ${firepot_smoke_off_c}) return 0.0;
+        // Smoke mode: 160F = 71.1C, 200F = 93.3C
+        if (id(firepot_temperature_c).state < 71.1) {
+          if (!id(hotrod_1_sw).state) {
+            id(hotrod_1_sw).turn_on();
+          }
+          ESP_LOGD("Firepot", "Smoke mode: hotrod ON - firepot below 160F");
+          return 1.0;
+        } else if (id(firepot_temperature_c).state > 93.3) {
+          if (id(hotrod_1_sw).state) {
+            id(hotrod_1_sw).turn_off();
+            ESP_LOGD("Firepot", "Smoke mode: hotrod OFF - firepot above 200F");
+          }
+          return 0.0;
+        }
       }
       return 0.0;
-
   - platform: max6675
-    name: "FirePot Temperature"
-    id: firepot_temperature
+    id: firepot_temperature_c
     cs_pin: GPIO15
     update_interval: 5s
 
+  - platform: template
+    name: "FirePot Temperature"
+    id: firepot_temperature_f
+    unit_of_measurement: "°F"
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: |-
+      if (id(firepot_temperature_c).has_state() && !isnan(id(firepot_temperature_c).state)) {
+        return id(firepot_temperature_c).state * 1.8 + 32.0;
+      }
+      return NAN;
+    filters:
+      - filter_out: NaN
+
   - platform: max31865
+    #name: "RTD Temperature raw"
     id: rtd_temperature_c
-    cs_pin: GPIO17
-    spi_id: spi_bus
+    cs_pin: GPIO17 
+    spi_id: spi_bus 
     reference_resistance: "4280 Ω"
     rtd_nominal_resistance: "1000 Ω"
     data_rate: 4MHz
@@ -207,24 +249,36 @@ sensor:
     accuracy_decimals: 1
     update_interval: 1s
     lambda: |-
-      if (id(rtd_temperature_c).has_state()) {
-        return id(rtd_temperature_c).state * 1.8 + 32.0;
+      if (id(rtd_temperature_c).has_state() && !isnan(id(rtd_temperature_c).state)) {
+        float raw = id(rtd_temperature_c).state * 1.8 + 32.0;
+        // Polynomial cal vs RFX reference (2026-07-10, ramp to 350F+)
+        return -0.0011541427f * raw * raw + 1.72105414f * raw - 64.8585f;
       }
-      return {};
+      return NAN;
     filters:
-      - offset: +6
+      - filter_out: NaN
 
+  # - platform: vl53l0x  
+  #   name: "Pellet Level"
+  #   long_range: true
+  #   timeout: 200us
+  #   update_interval: 5s
+  #   unit_of_measurement: "m"
+  #   accuracy_decimals: 2
+
+
+      
+
+############## ADC1_A1 ##############
   - platform: template
     name: "A1 Thermistor Resistance"
     unit_of_measurement: "Ω"
     update_interval: never
     id: a1_thermistor_resistance
-    internal: true
-    entity_category: diagnostic
 
   - platform: template
     name: "A1 Temperature"
-    id: a1_temperature
+    id: a1_temperature  
     unit_of_measurement: "°F"
     accuracy_decimals: 2
     update_interval: never
@@ -237,81 +291,81 @@ sensor:
     unit_of_measurement: "V"
     accuracy_decimals: 4
     update_interval: 2s
-    gain: 6.144
+    gain: 6.144  # measures up to 6.144v
     filters:
-      median:
+      median: 
         window_size: 7
         send_every: 1
     on_value:
       then:
         - lambda: |-
-            const float Vcc = 5.1;
-            const float R_1 = 148600;
+            // Calculate thermistor resistance
+            const float Vcc = 5.1;        // Supply voltage (adjust if 5V)
+            const float R_1 = 148600;  // Fixed resistor (1kΩ, adjust if different)
             float Vout = id(a1_voltage).state;
             float R_thermistor = 0;
-
-            if (Vout > 0) {
-              R_thermistor = (Vout * R_1) / (Vcc - Vout);
+            
+            if (Vout > 0) {  // Avoid division by zero
+              R_thermistor = (Vout * R_1 ) / (Vcc - Vout);
+              //(148600 * (4.971-2.595)) / 2.595 
             }
-
+            
+            // Calculate temperature using Steinhart-Hart equation
+            //THERMOWORKS PRO TEMP PROBE
             float temperature = 0;
             if (R_thermistor > 0) {
               const float A = .00086732282163;
               const float B = .00019645922453;
               const float C = .0000001484424132;
-
+              
               float lnR = log(R_thermistor);
               float T_kelvin = 1.0 / (A + B * lnR + C * lnR * lnR * lnR);
               float T_celsius = T_kelvin - 273.15;
-              temperature = (T_celsius * 9.0 / 5.0) + 32.0;
+              temperature = (T_celsius * 9.0 / 5.0) + 32.0;  // Convert to Fahrenheit
             }
-
+            
+            // Publish values to the sensors
             id(a1_thermistor_resistance).publish_state(R_thermistor);
             id(a1_temperature).publish_state(temperature);
 
+
   - platform: rotary_encoder
     name: "Rotary Encoder"
-    pin_a:
-      number: GPIO18
+    pin_a: 
+      number: GPIO18 
       inverted: true
-    pin_b:
-      number: GPIO8
+    pin_b: 
+      number: GPIO8 
       inverted: false
     id: rotary
     on_clockwise:
       - script.execute:
-          id: sc_adjust_setpoint
+          id: sc_adjust_set_temp
           direction: 1
-          use_fine_coarse: true
     on_anticlockwise:
       - script.execute:
-          id: sc_adjust_setpoint
+          id: sc_adjust_set_temp
           direction: -1
-          use_fine_coarse: true
 
 button:
-  - platform: restart
+  - platform: restart #allows remote reset of tywe1s chip from home assistant or internally
     id: restart_esp
-    name: "Controller Restart"
+    name: "Controller Restart" 
   - platform: factory_reset
-    name: Restart with Factory Default Settings
-    internal: true
+    name: Restart with Factory Default Settings    
   - platform: template
     name: "Emergency Stop"
-    id: sc_stop_all_button
+    id: sc_stop_all_smoking_button
     on_press:
-      - script.execute: sc_stop_all
+      - script.execute: sc_stop_all_smoking
 
 text_sensor:
   - platform: template
     id: status_msg
     name: "Status Message"
 
-  - platform: template
-    id: status_msg_saved_page_1
-    internal: true
-
 switch:
+
   - platform: template
     optimistic: true
     name: "System ON/OFF"
@@ -319,36 +373,56 @@ switch:
     on_turn_on:
       - logger.log: "System turned ON"
       - globals.set:
-          id: lighting_flag_global
-          value: 'true'
-      - globals.set:
-          id: fan_manual_override
+          id: lighting_failed_dialog
           value: 'false'
       - logger.log: "turning ON fan"
       - switch.turn_on: fans_on_off_sw
-      - script.execute: sc_light_pot
-
+      - if:
+          condition:
+            lambda: |-
+              float fp = id(firepot_temperature_c).state;
+              return !isnan(fp) && fp >= 148.9f;
+          then:
+            - logger.log: "Firepot already lit - skipping lighting cycle"
+            - globals.set:
+                id: lighting_flag_global
+                value: 'false'
+            - lambda: |-
+                id(lighting_flag).publish_state(false);
+                id(status_msg).publish_state("Firepot already lit");
+            - delay: 2s
+            - if:
+                condition:
+                  switch.is_on: smoke_mode
+                then:
+                  - lambda: id(status_msg).publish_state("Smoking Mode");
+                  - script.execute: sc_pot_smoking
+                else:
+                  - lambda: id(status_msg).publish_state("Heating Mode");
+                  - script.execute: sc_pot_heating
+          else:
+            - globals.set:
+                id: lighting_flag_global
+                value: 'true'
+            - script.execute: sc_light_pot
+     
     on_turn_off:
       - logger.log: "System turned OFF"
-      - switch.turn_off: smoke_mode
-      - switch.turn_off: hotrod_1_sw
-      - switch.turn_off: auger_1_sw
-      - script.execute: sc_stop_all
+      - switch.turn_off: smoke_mode    
+      - script.execute: sc_stop_all_smoking
       - lambda: id(status_msg).publish_state("Turned OFF");
       - if:
           condition:
             lambda: |-
-              return id(rtd_temperature_f).has_state() &&
-                     id(rtd_temperature_f).state > ${fan_cooldown_f};
+              float temp = id(rtd_temperature_f).state;
+              return !isnan(temp) && temp > 175.0;
           then:
-            - globals.set:
-                id: fan_manual_override
-                value: 'false'
             - script.execute: sc_shutdown
-            - lambda: id(status_msg).publish_state("Cooling down - Fans ON");
+            - lambda: id(status_msg).publish_state("Cooldown - Fans ON");
           else:
+            - script.stop: sc_shutdown
             - switch.turn_off: fans_on_off_sw
-
+#
   - platform: template
     optimistic: true
     name: "Smoking Mode ON/OFF"
@@ -356,61 +430,77 @@ switch:
     on_turn_on:
       - if:
           condition:
-            switch.is_on: go
+            - switch.is_on: go
           then:
             - switch.turn_off: hotrod_1_sw
             - script.stop: sc_light_pot
             - logger.log: "Smoke Mode turned ON"
-            - lambda: id(status_msg).publish_state("Smoking Mode");
-            - script.stop: sc_pot_heating
+            - lambda: id(status_msg).publish_state("Smoking Mode"); 
+            - script.stop: sc_pot_heating          
             - script.execute: sc_pot_smoking
             - switch.turn_on: fans_on_off_sw
     on_turn_off:
       - if:
           condition:
-            switch.is_on: go
+            - switch.is_on: go
           then:
             - logger.log: "sw.Heating Mode"
             - lambda: id(status_msg).publish_state("Heating Mode");
             - script.stop: sc_pot_smoking
             - script.execute: sc_pot_heating
-
+#      
   - platform: gpio
     pin: GPIO11
-    name: "Fans On/Off"
+    name: "-Fans On/Off"
     inverted: no
     id: fans_on_off_sw
-    internal: true
     on_turn_on:
       - lambda: |-
-          id(fan_manual_override) = false;
-          ESP_LOGD("Fans ON", "RTD Temp: %.3f", id(rtd_temperature_f).state);
+            ESP_LOGD("Fans ON: RTD Probe", "RTD Temp: %.3f", id(rtd_temperature_f).state);        
     on_turn_off:
-      - lambda: |-
-          id(fan_manual_override) = true;
-          ESP_LOGD("Fans OFF", "RTD Temp: %.3f (manual override)", id(rtd_temperature_f).state);
-          if (id(rtd_temperature_f).has_state() &&
-              id(rtd_temperature_f).state > ${fan_cooldown_f}) {
-            id(status_msg).publish_state("Fan off - grill still hot");
-          }
+      # Only auto-cooldown when system is still ON (manual fan off while cooking).
+      # System OFF uses explicit sc_shutdown from go on_turn_off.
+      - if:
+          condition:
+            and:
+              - switch.is_on: go
+              - lambda: |-
+                  float temp = id(rtd_temperature_f).state;
+                  return !isnan(temp) && temp > 175.0;
+          then:
+            - script.execute: sc_shutdown
+            - switch.turn_on: fans_on_off_sw        
+            - lambda: id(status_msg).publish_state("Grill is Hot-Fan ON");
+            - delay: 1s
+            - lambda: |-
+                      id(fans_on_off_sw)->publish_state(true);             
+          else:  
+            - if:
+                condition:
+                  switch.is_on: go
+                then:
+                  - script.stop: sc_shutdown
+                  - lambda: id(status_msg).publish_state("Fan OFF @ < 175F");
+                  - delay: 1s
+                  - lambda: |-
+                      id(fans_on_off_sw)->publish_state(false);
 
   - platform: gpio
     pin: GPIO12
-    name: "Auger 1 SW"
+    name: "-Auger 1 SW"
     inverted: no
     id: auger_1_sw
-    internal: true
     restore_mode: ALWAYS_OFF
 
   - platform: gpio
     pin: GPIO13
-    name: "HotRod 1 SW"
+    name: "-HotRod 1 SW"
     inverted: no
     id: hotrod_1_sw
-    internal: true
     restore_mode: ALWAYS_OFF
 
 binary_sensor:
+
   - platform: gpio
     pin:
       number: GPIO10
@@ -437,6 +527,7 @@ binary_sensor:
       - switch.toggle: smoke_mode
       - logger.log: "Smoke mode button pressed - toggling smoke mode"
 
+
   - platform: gpio
     pin:
       number: GPIO38
@@ -448,9 +539,8 @@ binary_sensor:
       - delayed_on_off: 50ms
     on_press:
       - script.execute:
-          id: sc_adjust_setpoint
+          id: sc_adjust_set_temp
           direction: -1
-          use_fine_coarse: false
 
   - platform: gpio
     pin:
@@ -463,9 +553,8 @@ binary_sensor:
       - delayed_on_off: 50ms
     on_press:
       - script.execute:
-          id: sc_adjust_setpoint
+          id: sc_adjust_set_temp
           direction: 1
-          use_fine_coarse: false
 
   - platform: touchscreen
     id: touch_key_POWER
@@ -476,7 +565,6 @@ binary_sensor:
     on_press:
       - logger.log: "POWER was touched"
       - switch.toggle: go
-
   - platform: touchscreen
     id: touch_key_SMOKE
     x_min: 96
@@ -497,8 +585,25 @@ binary_sensor:
       - logger.log: "HotRod was touched"
       - switch.toggle: hotrod_1_sw
 
+  - platform: touchscreen
+    id: touch_key_LIGHTING_OK
+    x_min: 70
+    x_max: 170
+    y_min: 210
+    y_max: 250
+    on_press:
+      - if:
+          condition:
+            lambda: return id(lighting_failed_dialog);
+          then:
+            - globals.set:
+                id: lighting_failed_dialog
+                value: 'false'
+            - lambda: id(status_msg).publish_state("Ready");
+            - logger.log: "Lighting failed dialog dismissed"
+
   - platform: gpio
-    pin:
+    pin: 
       number: GPIO3
       mode:
         input: true
@@ -506,52 +611,38 @@ binary_sensor:
     name: "Rotary Switch"
     id: rotary_switch
     filters:
-      invert:
+      invert: 
     on_multi_click:
       - timing:
-          - ON for at most 1s
-          - OFF for at least 0.5s
+        - ON for at most 1s
+        - OFF for at least 0.5s
         then:
           - logger.log: "Single Click - Toggling adjustment selection"
           - lambda: |-
-              if (id(page_1_selected_option) == "temp_setting") {
-                id(status_msg).publish_state("     Adjusting P Level");
-                id(page_1_selected_option) = "p_setting";
-              } else {
-                id(status_msg).publish_state("     Adjusting Temp");
-                id(page_1_selected_option) = "temp_setting";
-              }
+                if (id(page_1_selected_option) == "temp_setting") {
+                  id(status_msg).publish_state("     Adjusting P Level");
+                  id(page_1_selected_option) = "p_setting";
+                } else {
+                  id(status_msg).publish_state("     Adjusting Temp");
+                  id(page_1_selected_option) = "temp_setting";
+                }
 
       - timing:
-          - ON for at least 1s
-        then:
-          - logger.log: "Rotary Switch Long Pressed Toggling Display Page"
-          - lambda: |-
-              if (id(page_number) == 1) {
-                id(status_msg_saved_page_1).publish_state(id(status_msg).state);
-                id(page_number) = 2;
-                id(status_msg).publish_state("  ");
-              } else {
-                id(page_number) = 1;
-                id(status_msg).publish_state(id(status_msg_saved_page_1).state);
-              }
-
-      - timing:
-          - ON for at most 1s
-          - OFF for at most 1s
-          - ON for at most 1s
-          - OFF for at least 0.2s
+        - ON for at most 1s
+        - OFF for at most 1s
+        - ON for at most 1s
+        - OFF for at least 0.2s
         then:
           - logger.log: "Double Click Detected"
 
   - platform: template
     id: lighting_flag
     name: "Lighting Flag"
-    internal: true
-    entity_category: diagnostic
-    lambda: 'return id(lighting_flag_global);'
+    lambda: |-
+        return id(lighting_flag_global);
 
 number:
+#PID values
   - platform: template
     name: "PID Proportional Band"
     id: pid_pb
@@ -560,12 +651,10 @@ number:
     max_value: 200
     step: 1
     restore_value: true
-    initial_value: 55.0
-    internal: true
-    entity_category: config
+    initial_value: 60.0
     mode: box
     icon: mdi:tune-vertical
-
+    
   - platform: template
     name: "PID Ti (Reset Time)"
     id: pid_ti
@@ -574,23 +663,19 @@ number:
     max_value: 600
     step: 1
     restore_value: true
-    initial_value: 180.0
-    internal: true
-    entity_category: config
+    initial_value: 150.0
     mode: box
     icon: mdi:timer-sync
-
+    
   - platform: template
     name: "PID Td (Rate Time)"
     id: pid_td
     optimistic: true
     min_value: 0
     max_value: 120
-    step: 1
+    step: 1    
     restore_value: true
-    initial_value: 45.0
-    internal: true
-    entity_category: config
+    initial_value: 40.0
     mode: box
     icon: mdi:timer-outline
 
@@ -600,11 +685,9 @@ number:
     min_value: 0
     max_value: 600
     step: 1
-    initial_value: 300
+    initial_value: 115
     optimistic: true
     restore_value: true
-    internal: true
-    entity_category: config
     unit_of_measurement: "s"
 
   - platform: template
@@ -613,11 +696,9 @@ number:
     min_value: 0
     max_value: 120
     step: 1
-    initial_value: 12
+    initial_value: 25
     optimistic: true
     restore_value: true
-    internal: true
-    entity_category: config
     unit_of_measurement: "s"
     mode: box
     icon: mdi:tune-vertical
@@ -628,11 +709,9 @@ number:
     min_value: 0.0
     max_value: 1.0
     step: 0.0001
-    initial_value: 0.0
+    initial_value: 0.001
     optimistic: true
     restore_value: true
-    internal: true
-    entity_category: config
     mode: box
     icon: mdi:tune-vertical
 
@@ -642,17 +721,15 @@ number:
     min_value: 0
     max_value: 50
     step: 1
-    initial_value: 25
+    initial_value: 10
     optimistic: true
     restore_value: true
-    internal: true
-    entity_category: config
     unit_of_measurement: "°F"
     mode: box
-    icon: mdi:tune-vertical
+    icon: mdi:tune-vertical    
 
   - platform: template
-    name: "Smoke Auger On Time"
+    name: "Smoke Auger On Time (10s)"
     id: smoke_on_time
     restore_value: yes
     min_value: 5
@@ -676,7 +753,7 @@ number:
     mode: box
 
   - platform: template
-    name: "PID Error Temp"
+    name:  "PID Error Temp"
     id: pid_error
     min_value: 0
     max_value: 600
@@ -684,8 +761,6 @@ number:
     initial_value: 100
     optimistic: true
     restore_value: false
-    internal: true
-    entity_category: diagnostic
     unit_of_measurement: "°F"
 
   - platform: template
@@ -697,9 +772,20 @@ number:
     initial_value: 225
     optimistic: true
     restore_value: true
+    update_interval: 60s
     unit_of_measurement: "°F"
     mode: slider
+    on_value:
+      - if:
+          condition:
+            and:
+              - switch.is_on: go
+              - switch.is_off: smoke_mode
+              - lambda: return !id(lighting_flag_global);
+          then:
+            - script.execute: sc_pid_control
 
+# Pot lighting: ON = initial pellet load; OFF = max wait for 300F before failure
   - platform: template
     name: Pot lighting ON Time
     id: pot_lighting_on_time
@@ -708,7 +794,7 @@ number:
     step: 1
     initial_value: 60
     optimistic: true
-    restore_value: false
+    restore_value: true
     unit_of_measurement: "s"
     mode: slider
     icon: mdi:timer-settings
@@ -716,16 +802,17 @@ number:
   - platform: template
     name: Pot lighting OFF Time
     id: pot_lighting_off_time
-    min_value: 1
-    max_value: 360
+    min_value: 60
+    max_value: 600
     step: 1
     initial_value: 600
     optimistic: true
-    restore_value: false
+    restore_value: true
     unit_of_measurement: "s"
     mode: slider
     icon: mdi:timer-settings
 
+# Heating times
   - platform: template
     name: Augers Heating ON Time
     id: augers_heating_on_time
@@ -737,11 +824,11 @@ number:
     restore_value: true
     unit_of_measurement: "s"
     mode: slider
-    icon: mdi:timer-settings
+    icon: mdi:timer-settings    
 
   - platform: template
     name: Augers Heating OFF Time
-    id: augers_heating_off_time
+    id: augers_heating_off_time    
     min_value: 0
     max_value: 20
     step: 0.5
@@ -752,119 +839,42 @@ number:
     mode: slider
     icon: mdi:timer-settings-outline
 
-  - platform: template
-    name: "Smoke Cycle Delay"
-    id: smoke_cycle_delay
-    min_value: 30
-    max_value: 90
-    step: 5
-    initial_value: 45
-    optimistic: true
-    restore_value: true
-    internal: true
-    entity_category: config
-    unit_of_measurement: "s"
-    mode: slider
-    icon: mdi:timer-sync
 
 script:
-  - id: sc_adjust_setpoint
-    mode: queued
-    parameters:
-      direction: int
-      use_fine_coarse: bool
-    then:
-      - if:
-          condition:
-            lambda: 'return id(page_1_selected_option) == "temp_setting";'
-          then:
-            - lambda: |-
-                float current_temp = id(smoker_set_temp).state;
-                float step;
-                if (current_temp <= ${temp_coarse_threshold_f}) {
-                  step = ${temp_fine_step_f};
-                } else if (use_fine_coarse && id(rotary_switch).state) {
-                  step = ${temp_fine_step_f};
-                } else {
-                  step = ${temp_coarse_step_f};
-                }
-                float new_temp = current_temp + (direction * step);
-                if (current_temp <= ${temp_coarse_threshold_f}) {
-                  new_temp = round(new_temp / ${temp_fine_step_f}) * ${temp_fine_step_f};
-                } else {
-                  new_temp = round(new_temp / ${temp_coarse_step_f}) * ${temp_coarse_step_f};
-                }
-                if (new_temp >= ${temp_min_f} &&
-                    new_temp <= id(smoker_set_temp).traits.get_max_value()) {
-                  id(smoker_set_temp).publish_state(new_temp);
-                }
-          else:
-            - script.execute:
-                id: sc_adjust_p_select
-                direction: !lambda 'return direction;'
-
-  - id: sc_adjust_p_select
-    mode: queued
+  - id: sc_adjust_set_temp
+    mode: single
     parameters:
       direction: int
     then:
       - lambda: |-
-          auto current_index = id(p_select).index_of(id(p_select).state);
-          if (!current_index.has_value()) {
-            return;
+          if (id(page_1_selected_option) == "temp_setting") {
+            float current_temp = id(smoker_set_temp).state;
+            float step;
+            if (current_temp <= 225) {
+              step = 5.0f;
+            } else {
+              // Fine step while rotary switch is held
+              step = id(rotary_switch).state ? 5.0f : 25.0f;
+            }
+            float new_temp = current_temp + (direction * step);
+            if (current_temp <= 225) {
+              new_temp = round(new_temp / 5.0f) * 5.0f;
+            } else {
+              new_temp = round(new_temp / 25.0f) * 25.0f;
+            }
+            float min_v = id(smoker_set_temp).traits.get_min_value();
+            float max_v = id(smoker_set_temp).traits.get_max_value();
+            if (new_temp >= min_v && new_temp <= max_v) {
+              id(smoker_set_temp).publish_state(new_temp);
+            }
+          } else if (id(page_1_selected_option) == "p_setting") {
+            auto current_index = id(p_select).index_of(id(p_select).state);
+            if (current_index.has_value()) {
+              int next_index = (static_cast<int>(current_index.value()) + direction) % 6;
+              if (next_index < 0) next_index += 6;
+              id(p_select).make_call().set_index(next_index).perform();
+            }
           }
-          int next_index = current_index.value() + direction;
-          if (next_index < 0) {
-            next_index += ${p_select_count};
-          } else {
-            next_index %= ${p_select_count};
-          }
-          id(p_select).make_call().set_index(next_index).perform();
-
-  - id: sc_firepot_monitor
-    mode: single
-    then:
-      - if:
-          condition:
-            switch.is_on: go
-          then:
-            - if:
-                condition:
-                  lambda: 'return !id(lighting_flag_global);'
-                then:
-                  - if:
-                      condition:
-                        lambda: |-
-                          if (!id(firepot_temperature).has_state()) return false;
-                          float fp = id(firepot_temperature).state;
-                          if (!id(smoke_mode).state) {
-                            return fp < ${firepot_heat_on_c};
-                          }
-                          return fp < ${firepot_smoke_on_c};
-                      then:
-                        - if:
-                            condition:
-                              switch.is_off: hotrod_1_sw
-                            then:
-                              - switch.turn_on: hotrod_1_sw
-                              - logger.log: "Firepot: hotrod ON (flame recovery)"
-                      else:
-                        - if:
-                            condition:
-                              lambda: |-
-                                if (!id(firepot_temperature).has_state()) return false;
-                                float fp = id(firepot_temperature).state;
-                                if (!id(smoke_mode).state) {
-                                  return fp > ${firepot_heat_off_c};
-                                }
-                                return fp > ${firepot_smoke_off_c};
-                            then:
-                              - if:
-                                  condition:
-                                    switch.is_on: hotrod_1_sw
-                                  then:
-                                    - switch.turn_off: hotrod_1_sw
-                                    - logger.log: "Firepot: hotrod OFF"
 
   - id: sc_light_pot
     mode: single
@@ -872,34 +882,85 @@ script:
       - logger.log: "sc_light_pot executing"
       - if:
           condition:
-            switch.is_on: go
+            - switch.is_on: go
           then:
             - delay: 0.01s
+            - logger.log: "Lighting Pot now"
             - lambda: id(status_msg).publish_state("Lighting Fire Pot");
+            - globals.set:
+                id: lighting_retry_count
+                value: '0'
             - switch.turn_on: hotrod_1_sw
             - switch.turn_on: auger_1_sw
-            - delay: !lambda 'return (uint32_t)(id(pot_lighting_on_time).state * 1000);'
+            # Initial pellet load (pot_lighting_on_time)
+            - delay: !lambda "return id(pot_lighting_on_time).state * 1000;"
             - switch.turn_off: auger_1_sw
-            - repeat:
-                count: 3
+            - lambda: id(lighting_start_ms) = millis();
+            # Wait for firepot >= 300F; pulse auger up to 3 times while waiting
+            - while:
+                condition:
+                  and:
+                    - switch.is_on: go
+                    - lambda: |-
+                        float fp = id(firepot_temperature_c).state;
+                        bool not_lit = isnan(fp) || fp < 148.9f;
+                        unsigned long elapsed = millis() - id(lighting_start_ms);
+                        bool within = elapsed < static_cast<unsigned long>(id(pot_lighting_off_time).state * 1000.0f);
+                        return not_lit && within;
                 then:
-                  - logger.log:
-                      format: "Keeping pot lit. Lighting Cycle counter = %d"
-                      args: ['iteration + 1']
-                  - delay: 30s
-                  - switch.turn_on: auger_1_sw
-                  - delay: 30s
-                  - switch.turn_off: auger_1_sw
-            - lambda: id(lighting_flag).publish_state(false);
-            - globals.set:
-                id: lighting_flag_global
-                value: 'false'
-            - lambda: id(status_msg).publish_state("Pot Lit");
-            - delay: 2s
-            - lambda: id(status_msg).publish_state("Heating Mode");
-            - script.execute: sc_pot_heating
-            - delay: 300s
-            - switch.turn_off: hotrod_1_sw
+                  - if:
+                      condition:
+                        lambda: |-
+                          // Pulse every ~60s, max 3 retries
+                          unsigned long elapsed = millis() - id(lighting_start_ms);
+                          int due = static_cast<int>(elapsed / 60000UL);
+                          return due > id(lighting_retry_count) && id(lighting_retry_count) < 3;
+                      then:
+                        - lambda: |-
+                            id(lighting_retry_count) = id(lighting_retry_count) + 1;
+                            id(status_msg).publish_state("Lighting retry...");
+                        - logger.log:
+                            format: "Lighting retry auger pulse %d"
+                            args: ['id(lighting_retry_count)']
+                        - switch.turn_on: auger_1_sw
+                        - delay: 30s
+                        - switch.turn_off: auger_1_sw
+                  - delay: 2s
+            - if:
+                condition:
+                  and:
+                    - switch.is_on: go
+                    - lambda: |-
+                        float fp = id(firepot_temperature_c).state;
+                        return !isnan(fp) && fp >= 148.9f;
+                then:
+                  - globals.set:
+                      id: lighting_flag_global
+                      value: 'false'
+                  - lambda: |-
+                      id(lighting_flag).publish_state(false);
+                      id(status_msg).publish_state("Pot Lit");
+                  - delay: 2s
+                  - lambda: id(status_msg).publish_state("Heating Mode");
+                  - script.execute: sc_pot_heating
+                  - delay: 300s
+                  - switch.turn_off: hotrod_1_sw
+                else:
+                  - if:
+                      condition:
+                        switch.is_on: go
+                      then:
+                        - switch.turn_off: hotrod_1_sw
+                        - switch.turn_off: auger_1_sw
+                        - globals.set:
+                            id: lighting_flag_global
+                            value: 'false'
+                        - globals.set:
+                            id: lighting_failed_dialog
+                            value: 'true'
+                        - lambda: id(status_msg).publish_state("Lighting failed");
+                        - logger.log: "Lighting failed - firepot never reached 300F"
+                        - switch.turn_off: go
 
   - id: sc_pot_heating
     mode: restart
@@ -907,13 +968,15 @@ script:
       - logger.log: "sc_pot_heating.STARTING"
       - while:
           condition:
-            switch.is_on: go
+            - switch.is_on: go
           then:
+            - script.execute: sc_pid_control
             - logger.log:
                 format: "Heating cycle: ON time=%.1fs, OFF time=%.1fs"
                 args: ["id(augers_heating_on_time).state", "id(augers_heating_off_time).state"]
             - switch.turn_on: auger_1_sw
             - delay: !lambda "return id(augers_heating_on_time).state * 1000;"
+            - script.execute: sc_pid_control
             - switch.turn_off: auger_1_sw
             - delay: !lambda "return id(augers_heating_off_time).state * 1000;"
 
@@ -922,8 +985,9 @@ script:
     then:
       - while:
           condition:
-            switch.is_on: go
+            - switch.is_on: go
           then:
+            - logger.log: "BEGIN sc_pot_smoking"
             - logger.log:
                 format: "Smoke settings - On time: %.1fs, Off time: %.1fs"
                 args: ['id(smoke_on_time).state', 'id(smoke_off_time).state']
@@ -931,191 +995,197 @@ script:
             - delay: !lambda "return id(smoke_on_time).state * 1000;"
             - switch.turn_off: auger_1_sw
             - delay: !lambda "return id(smoke_off_time).state * 1000;"
+            - logger.log: "END of sc_pot_smoking script"
 
-  - id: sc_stop_all
+  - id: sc_stop_all_smoking
     mode: single
     then:
-      - logger.log: "sc_stop_all"
+      - logger.log: "script Stop Everything"
       - lambda: id(status_msg).publish_state("Stopping...");
       - script.stop: sc_light_pot
       - script.stop: sc_pot_smoking
       - script.stop: sc_pot_heating
       - switch.turn_off: hotrod_1_sw
       - switch.turn_off: auger_1_sw
+      - globals.set:
+          id: lighting_flag_global
+          value: 'false'
 
   - id: sc_shutdown
-    mode: restart
+    mode: single
     then:
-      - if:
-          condition:
-            lambda: 'return !id(fan_manual_override);'
-          then:
-            - switch.turn_on: fans_on_off_sw
-      - delay: !lambda 'return ${fan_shutdown_delay_s} * 1000;'
+      - switch.turn_on: fans_on_off_sw
+      - delay: 1200s  # 20 minutes before next cool-check
       - if:
           condition:
             lambda: |-
-              if (!id(rtd_temperature_f).has_state()) return false;
-              return id(rtd_temperature_f).state > ${fan_cooldown_f};
+              float temp = id(rtd_temperature_f).state;
+              ESP_LOGD("Fan Control", "Checking temp %.1f against threshold 175.0", temp);
+              return !isnan(temp) && temp > 175.0;
           then:
-            - logger.log: "Smoker is still hot, keeping cooldown fans on"
-            - if:
-                condition:
-                  lambda: 'return !id(fan_manual_override);'
-                then:
-                  - switch.turn_on: fans_on_off_sw
+            - logger.log: "Smoker is still hot, continuing cooldown"
+            - switch.turn_on: fans_on_off_sw
+            - script.execute: sc_shutdown
           else:
             - logger.log: "Smoker is now cool, turning off fans"
             - switch.turn_off: fans_on_off_sw
             - script.stop: sc_shutdown
 
-interval:
-  - interval: 5s
+  # PiFire-style PID with Smith Predictor
+  - id: sc_pid_control
+    mode: single
     then:
-      - if:
-          condition:
-            and:
-              - switch.is_on: go
-              - switch.is_off: smoke_mode
-          then:
-            - lambda: |-
-                const float cycle_time = ${pid_cycle_time_s};
-                const float min_multiplier = 0.02;
-                const float max_multiplier = 0.999;
-                const float max_output = 0.95f;
+      - logger.log: "sc_pid_control.STARTING"
+      - lambda: |-
+          const float cycle_time = 15.0;
+          const float min_multiplier = 0.02;
+          const float max_multiplier = 0.999;
 
-                static float last_temp = 0.0;
-                static unsigned long last_time = 0;
-                static float integral = 0.0;
-                static float last_error = 0.0;
-                static float set_point = 0.0;
-                static unsigned long last_set_time = 0;
-                static float start_change_temp = 0.0;
-                static bool new_target = false;
+          static float last_temp = 0.0;
+          static unsigned long last_time = 0;
+          static float integral = 0.0;
+          static float last_output = 0.0;
+          static float last_error = 0.0;
+          static float kp = 0.0;
+          static float ki = 0.0;
+          static float kd = 0.0;
+          static float set_point = 0.0;
+          static unsigned long last_set_time = 0;
+          static float start_change_temp = 0.0;
+          static bool new_target = false;
 
-                unsigned long current_time = millis();
+          unsigned long current_time = millis();
 
-                if (last_time == 0) {
-                  last_time = current_time;
-                  return;
-                }
+          if (last_time == 0) {
+              last_time = current_time;
+              ESP_LOGD("PID", "Initializing: current_time = %lu", current_time);
+              return;
+          }
 
-                float dt = (current_time - last_time) / 1000.0;
-                if (dt < 0.001) {
-                  last_time = current_time;
-                  return;
-                }
+          float dt = (current_time - last_time) / 1000.0;
+          if (dt < 0.001) {
+              ESP_LOGD("PID", "dt too small: %f", dt);
+              last_time = current_time;
+              return;
+          }
 
-                if (!id(rtd_temperature_f).has_state()) {
-                  return;
-                }
+          float current_temp = id(rtd_temperature_f).state;
+          if (isnan(current_temp)) {
+              ESP_LOGW("PID", "RTD invalid - skipping update");
+              return;
+          }
 
-                float current_temp = id(rtd_temperature_f).state;
-                float pb = id(pid_pb).state;
-                float ti = id(pid_ti).state;
-                float td = id(pid_td).state;
-                float tau = id(pid_tau).state;
-                float theta = id(pid_theta).state;
-                float center_factor = id(pid_center_factor).state;
+          float pb = id(pid_pb).state;
+          float ti = id(pid_ti).state;
+          float td = id(pid_td).state;
+          float tau = id(pid_tau).state;
+          float theta = id(pid_theta).state;
+          float center_factor = id(pid_center_factor).state;
+          float stable_window = id(pid_stable_window).state;
 
-                float new_set_point = id(smoker_set_temp).state;
-                if (new_set_point != set_point) {
-                  set_point = new_set_point;
-                  last_error = 0.0;
-                  integral = 0.0;
-                  last_time = current_time;
-                  last_set_time = current_time;
-                  start_change_temp = current_temp;
-                  new_target = true;
-                }
+          float new_set_point = id(smoker_set_temp).state;
+          if (new_set_point != set_point) {
+              set_point = new_set_point;
+              last_error = 0.0;
+              integral = 0.0;
+              last_time = current_time;
+              last_set_time = current_time;
+              start_change_temp = current_temp;
+              new_target = true;
+              ESP_LOGD("PID", "New setpoint: %.3fF", set_point);
+          }
 
-                float kp = (pb != 0.0) ? 1.0 / pb : 0.0;
-                float ki = (ti != 0.0) ? kp / ti : 0.0;
-                float kd = kp * td;
-                float center = set_point * center_factor;
+          if (pb != 0.0) {
+              kp = 1.0 / pb;
+          } else {
+              kp = 0.0;
+          }
+          if (ti != 0.0) {
+              ki = kp / ti;
+          } else {
+              ki = 0.0;
+          }
+          kd = kp * td;
 
-                float roc = (current_temp - last_temp) / dt;
-                float predicted_temp = current_temp + (roc * theta) * (1 - exp(-dt / tau));
-                float predicted_error = set_point - predicted_temp;
-                float error = set_point - current_temp;
+          float center = set_point * center_factor;
 
-                float p = kp * predicted_error + center;
-                float integral_max = (ki != 0.0f) ? std::max(10000.0f, std::abs(center / ki)) : 10000.0f;
-                integral += predicted_error * dt;
-                integral = std::max(std::min(integral, integral_max), -integral_max);
-                float i = ki * integral;
+          float roc = (current_temp - last_temp) / dt;
+          float predicted_temp = current_temp + (roc * theta) * (1 - exp(-dt / tau));
+          float predicted_error = set_point - predicted_temp;
+          float error = set_point - current_temp;
 
-                float derv = (error - last_error) / dt;
-                if (dt <= 0) derv = 0.0;
-                float d = kd * derv;
+          float p = kp * predicted_error + center;
+          integral += predicted_error * dt;
+          integral = std::max(std::min(integral, 1000.0f), -1000.0f);
+          float i = ki * integral;
 
-                float u = p + i + d;
+          float derv = (error - last_error) / dt;
+          if (dt <= 0) derv = 0.0;
+          float d = kd * derv;
 
-                if (predicted_error < -150.0) {
-                  u = std::min(1.0f, u - 0.3f);
-                } else if (predicted_error > 150.0) {
-                  u = std::max(0.0f, u + 0.3f);
-                }
+          float u = p + i + d;
 
-                if (new_target && abs(error) <= 5.0) {
-                  new_target = false;
-                }
-                if (new_target && current_time - last_set_time >= cycle_time * 3 &&
-                    abs(error) <= abs(start_change_temp - set_point) / 2) {
-                  integral = 0.0;
-                }
-                if ((new_target && set_point < current_temp) || abs(error) > pb * 2) {
-                  derv = 0.0;
-                  d = 0.0;
-                }
-                if (error < pb / 2 && error > 0 && current_time - last_set_time < cycle_time * 3) {
-                  u *= 0.9;
-                }
+          // Overshoot cutoff: predicted temp above setpoint by stable_window
+          if (predicted_error < -stable_window) {
+              u = 0.0f;
+              integral = 0.0f;
+          }
 
-                float u_clamped = std::max(0.05f, std::min(max_output, u));
-                if (ki != 0.0) {
-                  integral += (u_clamped - u) / ki;
-                  integral = std::max(std::min(integral, integral_max), -integral_max);
-                }
-                u = u_clamped;
+          if (predicted_error < -150.0) {
+              u = std::min(1.0f, u - 0.3f);
+          } else if (predicted_error > 150.0) {
+              u = std::max(0.0f, u + 0.3f);
+          }
 
-                float new_on_time = u * cycle_time;
-                float new_off_time = (1.0 - u) * cycle_time;
+          if (new_target && abs(error) <= 5.0) {
+              new_target = false;
+          }
+          if (new_target && current_time - last_set_time >= cycle_time * 3 && abs(error) <= abs(start_change_temp - set_point) / 2) {
+              integral = 0.0;
+          }
+          if ((new_target && set_point < current_temp) || abs(error) > pb * 2) {
+              derv = 0.0;
+              d = 0.0;
+          }
+          if (error < pb / 2 && error > 0 && current_time - last_set_time < cycle_time * 3) {
+              u *= 0.9;
+          }
 
-                float min_time = cycle_time * min_multiplier;
-                float max_time = cycle_time * max_multiplier;
-                new_on_time = std::max(min_time, std::min(max_time, new_on_time));
-                new_off_time = std::max(min_time, std::min(max_time, new_off_time));
+          float u_clamped = std::max(0.05f, std::min(0.95f, u));
+          if (predicted_error < -stable_window) {
+              u_clamped = 0.05f;
+          }
+          if (ki != 0.0) {
+              integral += (u_clamped - u) / ki;
+              integral = std::max(std::min(integral, 1000.0f), -1000.0f);
+          }
+          u = u_clamped;
 
-                id(pid_error).publish_state(error);
-                id(augers_heating_on_time).publish_state(new_on_time);
-                id(augers_heating_off_time).publish_state(new_off_time);
+          if (abs(integral) > 1000) {
+              integral = 0.0;
+          }
 
-                last_temp = current_temp;
-                last_time = current_time;
-                last_error = error;
+          float new_on_time = u * cycle_time;
+          float new_off_time = (1.0 - u) * cycle_time;
 
-                ESP_LOGD("PID", "SetPoint: %.1f RTD: %.1f On: %.1fs Off: %.1fs",
-                         set_point, current_temp, new_on_time, new_off_time);
+          float min_time = cycle_time * min_multiplier;
+          float max_time = cycle_time * max_multiplier;
+          new_on_time = std::max(min_time, std::min(max_time, new_on_time));
+          new_off_time = std::max(min_time, std::min(max_time, new_off_time));
 
-  - interval: 10s
-    then:
-      - script.execute: sc_firepot_monitor
+          id(pid_error).publish_state(error);
+          id(augers_heating_on_time).publish_state(new_on_time);
+          id(augers_heating_off_time).publish_state(new_off_time);
 
-  - interval: 30s
-    then:
-      - if:
-          condition:
-            and:
-              - switch.is_off: go
-              - lambda: 'return !id(fan_manual_override);'
-              - lambda: |-
-                  return id(rtd_temperature_f).has_state() &&
-                         id(rtd_temperature_f).state > ${fan_cooldown_f};
-          then:
-            - if:
-                condition:
-                  switch.is_off: fans_on_off_sw
-                then:
-                  - switch.turn_on: fans_on_off_sw
-                  - script.execute: sc_shutdown
+          last_temp = current_temp;
+          last_time = current_time;
+          last_output = u;
+          last_error = error;
+
+          ESP_LOGD("PID", "dt: %.3f", dt);
+          ESP_LOGD("PID", "CurrentTemp: %.3f, SetPoint: %.3f, Output: %.3f, OnTime: %.3f, OffTime: %.3f",
+                  current_temp, set_point, u, new_on_time, new_off_time);
+          ESP_LOGD("PID", "P: %.3f, I: %.3f, D: %.3f, Center: %.3f", p, i, d, center);
+          ESP_LOGD("PID", "PredErr: %.3f, IntSum: %.3f, Tau: %.3f, Theta: %.3f",
+                  predicted_error, integral, tau, theta);
+          ESP_LOGD("PID", "Pb: %.3f, Ti: %.3f, Td: %.3f, StableWindow: %.3f", pb, ti, td, stable_window);
