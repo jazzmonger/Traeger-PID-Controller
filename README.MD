@@ -34,6 +34,8 @@ Outstanding temperature control even when opening the lid of the smoker.  Very l
 Fully adjustable PID Params (advanced)
 Lovelace Dashboards with animated icons for fans, auger & hotrod
 
+Full architecture doc here https://github.com/jazzmonger/Traeger-PID-Controller/blob/main/doc/1Traeger-S3-operation-summary.md
+
 This is a work in progress. I'm not affilaiated with Traeger or any other BBQ or smoker company. The design may or may not work with your gril, so, your mileage may vary. The chip Im using in this design is an ESP32 D1 Mini. Its small size,wide availability, and versatility makes it ideal for this use. You can probably use any ESP32 based dev board, but I cannot guarantee it will work. My larger project uses an ESP32-S3 as I needed every single available GPIO on that chip, and then some. Plus I needed to use the ESP-IDF framework for that project and also needed PSRAM, hence the S3 based board choice.
 
 This project has been a ton of fun.  It's a couple thousand lines of ESPHome code so it's not a "beginner" project by any definition.  But if you study the code long enough, you'll begin to make sense of it all - that's what I love about ESPHome. It's easily approachable by novice users. 
