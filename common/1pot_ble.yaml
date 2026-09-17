@@ -1,0 +1,208 @@
+# CST1 / CST1Pot iPhone app — BLE GATT server (1-Pot profile)
+# See docs/CST1_BLE_FIRMWARE.md and apps/CST1/docs/CST1_BLE.md
+
+esp32_ble:
+  name: CS1Pot
+
+esp32_ble_server:
+  manufacturer: Chain Smoker
+  services:
+    - uuid: 7c3f0001-8b4a-4e9f-9c1d-2a6b0e5f4d3c
+      advertise: true
+      characteristics:
+        - id: cst1_ble_ping
+          uuid: 7c3f0002-8b4a-4e9f-9c1d-2a6b0e5f4d3c
+          read: true
+          value: "CST 1-Pot"
+        - id: cst1_ble_status
+          uuid: 7c3f0003-8b4a-4e9f-9c1d-2a6b0e5f4d3c
+          read: true
+          notify: true
+          value: "0,0,0,0,0,0,0,0,0,0,0,-,0,0,Ready"
+        - id: cst1_ble_command
+          uuid: 7c3f0004-8b4a-4e9f-9c1d-2a6b0e5f4d3c
+          write: true
+          write_no_response: true
+          on_write:
+            then:
+              - lambda: |-
+                  std::string cmd(x.begin(), x.end());
+                  while (!cmd.empty() && (cmd.back() == '\r' || cmd.back() == '\n' || cmd.back() == ' ')) {
+                    cmd.pop_back();
+                  }
+                  size_t start = 0;
+                  while (start < cmd.size() && cmd[start] == ' ') {
+                    start++;
+                  }
+                  if (start > 0) {
+                    cmd = cmd.substr(start);
+                  }
+                  ESP_LOGI("CST1_BLE", "Command from %d: %s", id, cmd.c_str());
+
+                  if (cmd.rfind("SPF ", 0) == 0) {
+                    float temp = atof(cmd.substr(4).c_str());
+                    float min_v = id(smoker_set_temp).traits.get_min_value();
+                    float max_v = id(smoker_set_temp).traits.get_max_value();
+                    if (temp >= min_v && temp <= max_v) {
+                      id(smoker_set_temp).publish_state(temp);
+                    }
+                  } else if (cmd == "UI 1") {
+                    if (id(go).state && id(smoke_mode).state) {
+                      id(smoke_mode).turn_off();
+                    }
+                  } else if (cmd == "UI 2") {
+                    if (id(go).state && !id(smoke_mode).state) {
+                      id(smoke_mode).turn_on();
+                    }
+                  } else if (cmd == "UI 50") {
+                    if (id(go).state) {
+                      id(go).turn_off();
+                    } else {
+                      id(go).turn_on();
+                    }
+                  } else if (cmd == "UI 40") {
+                    id(sc_cst1_ble_temp_adjust).execute(1);
+                  } else if (cmd == "UI 41") {
+                    id(sc_cst1_ble_temp_adjust).execute(-1);
+                  } else if (cmd == "UI 42") {
+                    id(sc_cst1_ble_p_adjust).execute(1);
+                  } else if (cmd == "UI 43") {
+                    id(sc_cst1_ble_p_adjust).execute(-1);
+                  } else if (cmd == "UI 31") {
+                    if (id(auger_1_sw).state) {
+                      id(auger_1_sw).turn_off();
+                    } else {
+                      id(auger_1_sw).turn_on();
+                    }
+                  } else if (cmd == "UI 11") {
+                    if (id(hotrod_1_sw).state) {
+                      id(hotrod_1_sw).turn_off();
+                    } else {
+                      id(hotrod_1_sw).turn_on();
+                    }
+                  } else if (cmd == "PRIME") {
+                    id(sc_prime_auger).execute();
+                  } else {
+                    ESP_LOGW("CST1_BLE", "Unknown command: %s", cmd.c_str());
+                  }
+              - delay: 40ms
+              - script.execute: sc_cst1_ble_notify_status
+
+globals:
+  - id: cst1_ble_priming_global
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: sc_cst1_ble_notify_status
+
+script:
+  - id: sc_cst1_ble_temp_adjust
+    mode: single
+    parameters:
+      direction: int
+    then:
+      - lambda: |-
+          float current_temp = id(smoker_set_temp).state;
+          float step;
+          if (current_temp <= 225) {
+            step = 5.0f;
+          } else {
+            step = id(rotary_switch).state ? 5.0f : 25.0f;
+          }
+          float new_temp = current_temp + (direction * step);
+          if (current_temp <= 225) {
+            new_temp = round(new_temp / 5.0f) * 5.0f;
+          } else {
+            new_temp = round(new_temp / 25.0f) * 25.0f;
+          }
+          float min_v = id(smoker_set_temp).traits.get_min_value();
+          float max_v = id(smoker_set_temp).traits.get_max_value();
+          if (new_temp >= min_v && new_temp <= max_v) {
+            id(smoker_set_temp).publish_state(new_temp);
+          }
+
+  - id: sc_cst1_ble_p_adjust
+    mode: single
+    parameters:
+      direction: int
+    then:
+      - lambda: |-
+          auto current_index = id(p_select).index_of(id(p_select).state);
+          if (current_index.has_value()) {
+            int next_index = (static_cast<int>(current_index.value()) + direction) % 6;
+            if (next_index < 0) {
+              next_index += 6;
+            }
+            id(p_select).make_call().set_index(next_index).perform();
+          }
+
+  - id: sc_prime_auger
+    mode: restart
+    then:
+      - globals.set:
+          id: cst1_ble_priming_global
+          value: 'true'
+      - switch.turn_on: auger_1_sw
+      - delay: !lambda "return id(pot_lighting_on_time).state * 1000;"
+      - switch.turn_off: auger_1_sw
+      - globals.set:
+          id: cst1_ble_priming_global
+          value: 'false'
+
+  - id: sc_cst1_ble_notify_status
+    mode: queued
+    then:
+      - ble_server.characteristic.set_value:
+          id: cst1_ble_status
+          value: !lambda |-
+            auto fmt_c = [](float v) -> std::string {
+              if (isnan(v)) {
+                return "0.0";
+              }
+              return str_sprintf("%.1f", v);
+            };
+            auto fmt_f = [](float v) -> int {
+              if (isnan(v)) {
+                return 0;
+              }
+              return static_cast<int>(round(v));
+            };
+
+            float chamber_c = id(rtd_temperature_c).state;
+            float firepot_c = id(firepot_temperature_c).state;
+            float chamber_f = id(rtd_temperature_f).state;
+            float firepot_f = id(firepot_temperature_f).state;
+            int setpoint_f = static_cast<int>(round(id(smoker_set_temp).state));
+            int go_on = id(go).state ? 1 : 0;
+            int smoke = id(smoke_mode).state ? 1 : 0;
+            int p_index = id(p_select_index_global);
+            int auger = id(auger_1_sw).state ? 1 : 0;
+            int hotrod = id(hotrod_1_sw).state ? 1 : 0;
+            int prime = id(cst1_ble_priming_global) ? 1 : 0;
+            int lighting = id(lighting_flag_global) ? 1 : 0;
+            int priming = id(cst1_ble_priming_global) ? 1 : 0;
+            std::string status_text = id(status_msg).state;
+
+            std::string csv = str_sprintf(
+              "%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,-,%d,%d,%s",
+              fmt_c(chamber_c).c_str(),
+              fmt_c(firepot_c).c_str(),
+              fmt_f(chamber_f),
+              fmt_f(firepot_f),
+              setpoint_f,
+              go_on,
+              smoke,
+              p_index,
+              auger,
+              hotrod,
+              prime,
+              lighting,
+              priming,
+              status_text.c_str());
+            return std::vector<uint8_t>(csv.begin(), csv.end());
+      - ble_server.characteristic.notify:
+          id: cst1_ble_status

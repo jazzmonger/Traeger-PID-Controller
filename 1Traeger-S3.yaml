@@ -27,6 +27,7 @@ esphome:
 packages:
     touchscreen: !include common/IPS4.0_touchscreen_(esp32S3_Trager_1pot).yaml
     display_ui: !include common/1Traeger-S3_display.yaml
+    cst1_ble: !include common/1pot_ble.yaml
 
 psram:
   mode: octal
