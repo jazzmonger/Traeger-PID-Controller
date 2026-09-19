@@ -1,0 +1,338 @@
+# Touch zones — sync with includes/cs1pot_main_cook_ui.h
+binary_sensor:
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Mode OFF"
+    id: touch_mode_off
+    x_min: 8
+    x_max: 57
+    y_min: 4
+    y_max: 31
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute: sc_mode_off
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Mode Heat"
+    id: touch_mode_heat
+    x_min: 62
+    x_max: 111
+    y_min: 4
+    y_max: 31
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_request_cook_mode
+                mode: "Heat"
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Mode Smoke"
+    id: touch_mode_smoke
+    x_min: 116
+    x_max: 165
+    y_min: 4
+    y_max: 31
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_request_cook_mode
+                mode: "Smoke"
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Settings Gear"
+    id: touch_settings_gear
+    x_min: 178
+    x_max: 231
+    y_min: 4
+    y_max: 31
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute: sc_ui_open_settings
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Settings Back"
+    id: touch_settings_back
+    x_min: 0
+    x_max: 47
+    y_min: 0
+    y_max: 31
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(cs1pot_ui_page) != 0;'
+          then:
+            - script.execute: sc_ui_back_home
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Setpoint Down"
+    id: touch_key_TEMP_DOWN
+    x_min: 8
+    x_max: 51
+    y_min: 108
+    y_max: 141
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - globals.set:
+                id: page_1_selected_option
+                value: '"temp_setting"'
+            - script.execute:
+                id: sc_adjust_set_temp
+                direction: -1
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Setpoint Up"
+    id: touch_key_TEMP_UP
+    x_min: 188
+    x_max: 231
+    y_min: 108
+    y_max: 141
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - globals.set:
+                id: page_1_selected_option
+                value: '"temp_setting"'
+            - script.execute:
+                id: sc_adjust_set_temp
+                direction: 1
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Smoke Pill 1"
+    x_min: 21
+    x_max: 58
+    y_min: 146
+    y_max: 173
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_set_smoke_pill
+                pill: 1
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Smoke Pill 2"
+    x_min: 62
+    x_max: 99
+    y_min: 146
+    y_max: 173
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_set_smoke_pill
+                pill: 2
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Smoke Pill 3"
+    x_min: 103
+    x_max: 140
+    y_min: 146
+    y_max: 173
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_set_smoke_pill
+                pill: 3
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Smoke Pill 4"
+    x_min: 144
+    x_max: 181
+    y_min: 146
+    y_max: 173
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_set_smoke_pill
+                pill: 4
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Smoke Pill 5"
+    x_min: 185
+    x_max: 222
+    y_min: 146
+    y_max: 173
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute:
+                id: sc_set_smoke_pill
+                pill: 5
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Auger"
+    id: touch_key_AUGER
+    x_min: 0
+    x_max: 83
+    y_min: 248
+    y_max: 283
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute: sc_toggle_auger_manual
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Hotrod"
+    id: touch_key_HOTROD
+    x_min: 81
+    x_max: 161
+    y_min: 248
+    y_max: 283
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return id(cs1pot_ui_page) == 0 && !id(prime_confirm_dialog) && !id(lighting_failed_dialog);
+          then:
+            - script.execute: sc_toggle_hotrod_manual
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    name: "Touch Prime"
+    id: touch_key_PRIME
+    x_min: 157
+    x_max: 239
+    y_min: 248
+    y_max: 283
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(cs1pot_ui_page) == 0;'
+          then:
+            - script.execute: sc_prime_press
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: touch_prime_90
+    x_min: 14
+    x_max: 81
+    y_min: 196
+    y_max: 235
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(prime_confirm_dialog);'
+          then:
+            - script.execute:
+                id: sc_prime_auger
+                duration_s: 90
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: touch_prime_180
+    x_min: 86
+    x_max: 153
+    y_min: 196
+    y_max: 235
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(prime_confirm_dialog);'
+          then:
+            - script.execute:
+                id: sc_prime_auger
+                duration_s: 180
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: touch_prime_350
+    x_min: 158
+    x_max: 225
+    y_min: 196
+    y_max: 235
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(prime_confirm_dialog);'
+          then:
+            - script.execute:
+                id: sc_prime_auger
+                duration_s: 350
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: touch_prime_cancel
+    x_min: 85
+    x_max: 154
+    y_min: 252
+    y_max: 283
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(prime_confirm_dialog);'
+          then:
+            - script.execute: sc_prime_confirm_cancel
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: touch_key_LIGHTING_OK
+    x_min: 70
+    x_max: 170
+    y_min: 210
+    y_max: 250
+    on_press:
+      - if:
+          condition:
+            lambda: return id(lighting_failed_dialog);
+          then:
+            - globals.set:
+                id: lighting_failed_dialog
+                value: 'false'
+            - lambda: id(status_msg).publish_state("Ready!");
+            - logger.log: "Lighting failed dialog dismissed"

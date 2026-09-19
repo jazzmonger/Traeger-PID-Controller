@@ -1,0 +1,8 @@
+# Ring buffer of chamber temps for on-panel sparkline (120m @ 30s = 240 samples).
+interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          if (id(rtd_temperature_f).has_state()) {
+            cs1pot::hist_push(id(rtd_temperature_f).state, id(auger_1_sw).state);
+          }

@@ -1,4 +1,4 @@
-# Shared Traeger smoker UI (lambda + fonts). Hardware/sim YAML extends mydisplay.
+# Legacy Traeger UI (superseded by packages/cs1pot_display_ui.yaml — Jeff main-cook mock).
 display:
   - id: mydisplay
     update_interval: 0.5s

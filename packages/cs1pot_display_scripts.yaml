@@ -1,0 +1,212 @@
+# Touch + UI orchestration for main-cook display (matches includes/cs1pot_main_cook_ui.h).
+globals:
+  - id: cs1pot_ui_page
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: graph_time_pan
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: prime_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: prime_end_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: prime_confirm_dialog
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: status_before_prime
+    type: std::string
+    restore_value: no
+    initial_value: '"Ready!"'
+
+  - id: prime_finish_ok
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+select:
+  - platform: template
+    name: "Cook Mode"
+    id: cook_mode
+    options:
+      - "Heat"
+      - "Smoke"
+    initial_option: "Heat"
+    restore_value: true
+    optimistic: true
+    internal: false
+
+sensor:
+  - platform: template
+    name: "Pellet Level Percent"
+    id: pellet_level_pct
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      return NAN;
+
+script:
+  - id: sc_ui_open_settings
+    mode: single
+    then:
+      - lambda: 'id(cs1pot_ui_page) = 1;'
+
+  - id: sc_ui_back_home
+    mode: single
+    then:
+      - lambda: 'id(cs1pot_ui_page) = 0;'
+
+  - id: sc_request_cook_mode
+    mode: single
+    parameters:
+      mode: string
+    then:
+      - lambda: 'id(cook_mode).make_call().set_option(mode).perform();'
+      - if:
+          condition:
+            switch.is_off: go
+          then:
+            - switch.turn_on: go
+      - if:
+          condition:
+            lambda: 'return mode == "Smoke";'
+          then:
+            - if:
+                condition:
+                  switch.is_off: smoke_mode
+                then:
+                  - switch.turn_on: smoke_mode
+          else:
+            - if:
+                condition:
+                  switch.is_on: smoke_mode
+                then:
+                  - switch.turn_off: smoke_mode
+
+  - id: sc_mode_off
+    mode: single
+    then:
+      - if:
+          condition:
+            switch.is_on: go
+          then:
+            - switch.turn_off: go
+
+  - id: sc_set_smoke_pill
+    mode: single
+    parameters:
+      pill: int
+    then:
+      - lambda: |-
+          char opt[4];
+          snprintf(opt, sizeof(opt), "P%d", pill);
+          id(p_select).make_call().set_option(opt).perform();
+
+  - id: sc_toggle_auger_manual
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: 'return id(prime_active);'
+          then:
+            - script.execute: sc_cancel_prime
+          else:
+            - switch.toggle: auger_1_sw
+
+  - id: sc_toggle_hotrod_manual
+    mode: single
+    then:
+      - switch.toggle: hotrod_1_sw
+
+  - id: sc_cancel_prime
+    mode: single
+    then:
+      - lambda: |-
+          id(prime_active) = false;
+          id(prime_finish_ok) = false;
+      - script.stop: sc_prime_auger
+      - script.execute: sc_prime_auger_finish
+
+  - id: sc_prime_auger_finish
+    mode: single
+    then:
+      - lambda: |-
+          id(prime_active) = false;
+          id(prime_finish_ok) = false;
+          id(auger_1_sw).turn_off();
+          if (id(go).state) {
+            if (id(smoke_mode).state) {
+              id(status_msg).publish_state("Smoking Mode");
+            } else {
+              id(status_msg).publish_state("Heating Mode");
+            }
+          } else {
+            id(status_msg).publish_state("Ready!");
+          }
+
+  - id: sc_prime_press
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: 'return id(prime_active);'
+          then:
+            - script.execute: sc_cancel_prime
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(prime_confirm_dialog);'
+                then:
+                  - globals.set:
+                      id: prime_confirm_dialog
+                      value: 'false'
+                else:
+                  - globals.set:
+                      id: prime_confirm_dialog
+                      value: 'true'
+
+  - id: sc_prime_confirm_cancel
+    mode: single
+    then:
+      - globals.set:
+          id: prime_confirm_dialog
+          value: 'false'
+
+  - id: sc_prime_auger
+    mode: restart
+    parameters:
+      duration_s: int
+    then:
+      - lambda: |-
+          id(prime_confirm_dialog) = false;
+          id(prime_finish_ok) = false;
+          id(status_before_prime) = id(status_msg).state;
+          id(prime_active) = true;
+          id(prime_end_ms) = millis() + (uint32_t) duration_s * 1000u;
+          id(auger_1_sw).turn_on();
+          id(status_msg).publish_state("Priming");
+      - while:
+          condition:
+            lambda: |-
+              return id(prime_active) && millis() < id(prime_end_ms);
+          then:
+            - lambda: |-
+                uint32_t left = (id(prime_end_ms) - millis() + 999u) / 1000u;
+                char buf[20];
+                snprintf(buf, sizeof(buf), "Priming %lus", (unsigned long) left);
+                id(status_msg).publish_state(buf);
+            - delay: 1s
+      - lambda: 'id(prime_finish_ok) = true;'
+      - script.execute: sc_prime_auger_finish
