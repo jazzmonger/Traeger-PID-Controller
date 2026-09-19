@@ -1,25 +1,23 @@
-# Main-cook home screen (240x320) — Jeff mock 05-pellets-firepot
+# Main-cook home screen (240x320) — neon cyan mock (Jeff v2)
 display:
   - id: !extend mydisplay
     update_interval: 250ms
     lambda: |-
       using namespace cs1pot;
 
-      const Color bg = cook_bg();
-      const Color card = cook_card();
-      const Color muted = cook_muted();
-      const Color amber = cook_amber();
-      const Color cyan = cook_cyan();
+      const Color cyan = neon_cyan();
       const Color white = cook_white();
+      const Color muted = cook_muted();
+      const Color card = cook_card();
 
       if (id(lighting_failed_dialog)) {
         it.filled_rectangle(0, 0, 240, 320, Color(0, 0, 0));
         it.filled_rectangle(8, 70, 224, 190, Color(30, 30, 30));
-        it.rectangle(8, 70, 224, 190, Color(255, 90, 70));
-        auto msg_color = ((millis() / 500) % 2 == 0) ? Color(255, 90, 70) : white;
+        it.rectangle(8, 70, 224, 190, cook_firepot());
+        auto msg_color = ((millis() / 500) % 2 == 0) ? cook_firepot() : white;
         it.print(18, 95, id(font20), msg_color, "Lighting failed,");
         it.print(18, 120, id(font20), msg_color, "are pellets loaded?");
-        it.filled_rectangle(70, 210, 100, 40, Color(0, 140, 0));
+        it.filled_rectangle(70, 210, 100, 40, cyan);
         it.rectangle(70, 210, 100, 40, white);
         it.print(100, 218, id(font20), white, "OK");
         return;
@@ -49,21 +47,17 @@ display:
         return;
       }
 
-      it.filled_rectangle(0, 0, 240, 320, bg);
+      cook_fill_bg_gradient(it);
 
       if (id(cs1pot_ui_page) != 0) {
         it.filled_rectangle(0, 0, 240, 28, card);
-        it.filled_rectangle(2, 2, 44, 24, Color(28, 28, 30));
         it.print(12, 4, id(font20), cyan, "<");
         it.print(52, 6, id(font20), white, "Settings");
         it.print(kPad, 48, id(font14), white, "Tune via Home Assistant");
         it.print(kPad, 68, id(font12), muted, "or ESPHome dashboard.");
-        it.print(kPad, 92, id(font12), muted, "On-grill: cook + manual");
-        it.print(kPad, 108, id(font12), muted, "Auger / Hotrod / Prime.");
         it.filled_rectangle(0, kStatusY, 240, 2, cyan);
-        it.filled_rectangle(0, kStatusY + 2, 240, kStatusH - 2, card);
         const char *st = id(status_msg).state.c_str();
-        it.print(cook_status_center_x(st, 7), kStatusY + 10, id(font14), white, st);
+        it.print(cook_status_center_x(st, 7), kStatusY + 6, id(font12), white, st);
         return;
       }
 
@@ -71,29 +65,21 @@ display:
       const bool heat = on && (id(cook_mode).state == "Heat");
       const bool smoke = on && (id(cook_mode).state == "Smoke");
 
-      auto mode_btn = [&](int x, bool active, const char *label) {
-        cook_draw_round_btn(it, x, kModeY, kModeW, kModeH, active, amber, muted, white, Color(0, 0, 0));
-        int tx = x + (kModeW - (int) strlen(label) * 7) / 2;
-        if (tx < x + 4) tx = x + 4;
-        it.print(tx, kModeY + 7, id(font14), active ? Color(0, 0, 0) : white, label);
-      };
-      mode_btn(kModeOffX, !on, "OFF");
-      mode_btn(kModeHeatX, heat, "Heat");
-      mode_btn(kModeSmokeX, smoke, "Smoke");
-      cook_draw_round_btn(it, kGearX, kModeY, kGearW, kModeH, false, amber, muted, white, white);
-      cook_draw_gear(it, kGearX + kGearW / 2, kModeY + kModeH / 2, white);
+      cook_draw_mode_tab(it, id(font14), kModeOffX, kModeY, "OFF", !on);
+      cook_draw_mode_tab(it, id(font14), kModeHeatX, kModeY, "Heat", heat);
+      cook_draw_mode_tab(it, id(font14), kModeSmokeX, kModeY, "SMOKE", smoke);
+      cook_draw_gear(it, kGearX, kGearY + 8, muted);
 
       float chamber = id(rtd_temperature_f).state;
+      float set_f = id(smoker_set_temp).state;
+      cook_draw_chamber_gauge(it, chamber, set_f);
+
       if (!isnan(chamber)) {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "%.0f", chamber);
-        int tx = 120 - (int) strlen(buf) * 14;
-        if (tx < 8) tx = 8;
-        it.print(tx, kChamberNumY, id(font_chamber), amber, buf);
+        it.printf(78, kChamberTempY, id(font_chamber), white, "%.0fF", chamber);
       } else {
-        it.print(96, kChamberNumY, id(font_chamber), muted, "--");
+        it.print(96, kChamberTempY, id(font_chamber), muted, "--F");
       }
-      it.print(72, kChamberLblY, id(font12), muted, "F CHAMBER");
+      it.print(58, kChamberLblY, id(font12), cyan, "CURRENT CHAMBER");
 
       float fp = NAN;
       if (id(firepot_temperature_f).has_state())
@@ -104,18 +90,12 @@ display:
         it.print(84, kFirepotY, id(font14), cook_firepot(), "FirePot --F");
       }
 
-      it.filled_rectangle(kSetMinusX, kSetRowY, kSetBtnW, kSetRowH, card);
-      it.rectangle(kSetMinusX, kSetRowY, kSetBtnW, kSetRowH, cyan);
-      cook_draw_minus(it, kSetMinusX + kSetBtnW / 2, kSetRowY + kSetRowH / 2, white);
-      it.filled_rectangle(kSetCenterX, kSetRowY, kSetCenterW, kSetRowH, card);
-      it.rectangle(kSetCenterX, kSetRowY, kSetCenterW, kSetRowH, cyan);
-      it.print(kSetCenterX + 46, kSetRowY + 4, id(font12), muted, "SET");
-      it.printf(kSetCenterX + 28, kSetRowY + 16, id(font22), white, "%.0fF", id(smoker_set_temp).state);
-      it.filled_rectangle(kSetPlusX, kSetRowY, kSetBtnW, kSetRowH, card);
-      it.rectangle(kSetPlusX, kSetRowY, kSetBtnW, kSetRowH, cyan);
-      cook_draw_plus(it, kSetPlusX + kSetBtnW / 2, kSetRowY + kSetRowH / 2, white);
+      cook_draw_circle_btn(it, kSetMinusCx, kSetRowCy, kSetCircleR, true);
+      cook_draw_circle_btn(it, kSetPlusCx, kSetRowCy, kSetCircleR, false);
+      it.print(72, kSetRowCy - 6, id(font12), white, "SET");
+      it.printf(98, kSetRowCy - 8, id(font22), white, "%.0fF", set_f);
 
-      it.print(102, kSmokeRowY - 10, id(font12), muted, "SMOKE");
+      it.print(78, kSmokeLabelY, id(font14), white, "Smoke Level");
       int sel_pill = 1;
       auto idx = id(p_select).index_of(id(p_select).state);
       if (idx.has_value()) {
@@ -126,19 +106,19 @@ display:
           sel_pill = 1;
       }
       for (int pill = 1; pill <= 5; pill++) {
-        int px = cook_smoke_pill_x(pill);
-        bool active = (pill == sel_pill);
-        cook_draw_round_btn(it, px, kSmokeRowY, kSmokePillW, kSmokeRowH, active, amber, muted, white, Color(0, 0, 0));
-        char digit[2];
-        digit[0] = '0' + pill;
-        digit[1] = '\0';
-        it.print(px + 14, kSmokeRowY + 6, id(font14), active ? Color(0, 0, 0) : white, digit);
+        cook_draw_smoke_pill(it, id(font14), cook_smoke_pill_x(pill), kSmokeRowY, kSmokePillW, kSmokePillH, pill,
+                             pill == sel_pill);
       }
 
-      it.filled_rectangle(kGraphCardX, kGraphCardY, kGraphCardW, kGraphCardH, card);
-      it.rectangle(kGraphCardX, kGraphCardY, kGraphCardW, kGraphCardH, muted);
-      it.print(kGraphCardX + 6, kGraphCardY + 4, id(font12), muted, "Chamber 120m");
-      it.filled_rectangle(kGraphPlotX, kGraphPlotY, kGraphPlotW, kGraphPlotH, Color(24, 24, 24));
+      it.filled_rectangle(kCardX, kCardY, kCardW, kCardH, card);
+      it.rectangle(kCardX, kCardY, kCardW, kCardH, track_grey());
+      it.print(kCardX + 8, kCardY + 6, id(font12), cyan, "Chamber 120m");
+      it.filled_rectangle(kGraphPlotX, kGraphPlotY, kGraphPlotW, kGraphPlotH, Color(6, 8, 10));
+      for (int gx = kGraphPlotX + 8; gx < kGraphPlotX + kGraphPlotW; gx += 24)
+        it.line(gx, kGraphPlotY + 2, gx, kGraphPlotY + kGraphPlotH - 2, Color(28, 32, 38));
+      for (int gy = kGraphPlotY + 6; gy < kGraphPlotY + kGraphPlotH; gy += 8)
+        it.line(kGraphPlotX + 2, gy, kGraphPlotX + kGraphPlotW - 2, gy, Color(28, 32, 38));
+
       const int win_min = kHomeGraphWindowMin;
       int pan = hist_clamp_pan(win_min, id(graph_time_pan));
       id(graph_time_pan) = pan;
@@ -160,43 +140,49 @@ display:
           if (isnan(v)) continue;
           int x = kGraphPlotX + 1 + (i * (kGraphPlotW - 2) / (n - 1));
           int y = kGraphPlotY + kGraphPlotH - 1 - (int) ((v - ymin) / span * (kGraphPlotH - 2));
-          if (prev_x >= 0) it.line(prev_x, prev_y, x, y, amber);
+          if (prev_x >= 0) {
+            it.line(prev_x, prev_y, x, y, neon_glow());
+            it.line(prev_x, prev_y, x, y, cyan);
+          }
           prev_x = x; prev_y = y;
         }
       }
 
+      it.line(kCardX + 8, kCardY + 44, kCardX + kCardW - 8, kCardY + 44, track_grey());
       float pellet_pct = id(pellet_level_pct).state;
-      it.filled_rectangle(kPelletBarX, kPelletY, kPelletBarW, kPelletH, card);
-      it.rectangle(kPelletBarX, kPelletY, kPelletBarW, kPelletH, muted);
-      it.print(kPelletBarX + 6, kPelletY + 4, id(font12), muted, "PELLETS");
+      it.print(kCardX + 8, kCardY + 50, id(font12), cyan, "PELLETS");
       if (!isnan(pellet_pct)) {
-        it.printf(kPelletBarX + kPelletBarW - 44, kPelletY + 4, id(font12), muted, "%.0f%%", pellet_pct);
-        int fill_w = (int) ((kPelletBarW - 16) * pellet_pct / 100.0f);
+        it.printf(kCardX + kCardW - 44, kCardY + 50, id(font12), white, "%.0f%%", pellet_pct);
+        int bar_w = kCardW - 24;
+        int fill_w = (int) (bar_w * pellet_pct / 100.0f);
         if (fill_w < 0) fill_w = 0;
-        if (fill_w > kPelletBarW - 16) fill_w = kPelletBarW - 16;
-        it.filled_rectangle(kPelletBarX + 8, kPelletY + 14, fill_w, 6, amber);
-        it.rectangle(kPelletBarX + 8, kPelletY + 14, kPelletBarW - 16, 6, muted);
+        if (fill_w > bar_w) fill_w = bar_w;
+        it.filled_rectangle(kCardX + 12, kPelletBarY, bar_w, kPelletBarH, track_grey());
+        if (fill_w > 0) {
+          it.filled_rectangle(kCardX + 12, kPelletBarY - 1, fill_w, kPelletBarH + 2, neon_glow_soft());
+          it.filled_rectangle(kCardX + 12, kPelletBarY, fill_w, kPelletBarH, cyan);
+        }
       } else {
-        it.print(kPelletBarX + kPelletBarW - 36, kPelletY + 4, id(font12), muted, "--%");
-        it.rectangle(kPelletBarX + 8, kPelletY + 14, kPelletBarW - 16, 6, muted);
+        it.print(kCardX + kCardW - 40, kCardY + 50, id(font12), white, "--%");
+        it.filled_rectangle(kCardX + 12, kPelletBarY, kCardW - 24, kPelletBarH, track_grey());
       }
 
       bool aug_on = id(auger_1_sw).state;
       bool rod_on = id(hotrod_1_sw).state;
       bool priming = id(prime_active);
-      cook_draw_manual(it, id(font14), kAugerX, kManY, kManW, kManH, aug_on, Color(34, 197, 94), "Auger", 10);
-      cook_draw_manual(it, id(font14), kHotrodX, kManY, kManW, kManH, rod_on, Color(239, 68, 68), "Hotrod", 6);
-      cook_draw_manual(it, id(font14), kPrimeX, kManY, kManW, kManH, priming, cyan, "Prime", 12);
+      cook_draw_pill_manual(it, id(font14), kAugerX, kManY, kManW, kManH, aug_on, "Auger", 10);
+      cook_draw_pill_manual(it, id(font14), kHotrodX, kManY, kManW, kManH, rod_on, "Hotrod", 6);
+      cook_draw_pill_manual(it, id(font14), kPrimeX, kManY, kManW, kManH, priming, "Prime", 12);
 
-      it.filled_rectangle(0, kStatusY, 240, 2, cyan);
-      it.filled_rectangle(0, kStatusY + 2, 240, kStatusH - 2, card);
+      it.filled_rectangle(0, kStatusY, 240, 1, neon_glow_soft());
+      it.filled_rectangle(0, kStatusY + 1, 240, 1, cyan);
       const char *st = id(status_msg).state.c_str();
-      it.print(cook_status_center_x(st, 7), kStatusY + 10, id(font14), white, st);
+      it.print(cook_status_center_x(st, 6), kStatusY + 6, id(font12), white, st);
 
 font:
   - file: "gfonts://Roboto"
     id: font_chamber
-    size: 48
+    size: 40
   - file: "gfonts://Roboto"
     id: font22
     size: 22

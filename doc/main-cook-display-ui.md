@@ -1,6 +1,6 @@
 # On-grill ILI9341 main-cook UI (240×320 portrait)
 
-Jeff’s approved mock (`05-pellets-firepot`) is implemented in:
+Jeff’s approved **neon cyan** main-cook mock is implemented in:
 
 - `packages/cs1pot_display_ui.yaml` — draw lambda + fonts
 - `packages/cs1pot_display_touch.yaml` — touch zones

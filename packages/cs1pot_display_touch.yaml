@@ -5,9 +5,9 @@ binary_sensor:
     name: "Touch Mode OFF"
     id: touch_mode_off
     x_min: 8
-    x_max: 57
+    x_max: 58
     y_min: 4
-    y_max: 31
+    y_max: 28
     on_press:
       - if:
           condition:
@@ -20,10 +20,10 @@ binary_sensor:
     touchscreen_id: my_touchscreen
     name: "Touch Mode Heat"
     id: touch_mode_heat
-    x_min: 62
-    x_max: 111
+    x_min: 54
+    x_max: 108
     y_min: 4
-    y_max: 31
+    y_max: 28
     on_press:
       - if:
           condition:
@@ -38,10 +38,10 @@ binary_sensor:
     touchscreen_id: my_touchscreen
     name: "Touch Mode Smoke"
     id: touch_mode_smoke
-    x_min: 116
-    x_max: 165
+    x_min: 108
+    x_max: 168
     y_min: 4
-    y_max: 31
+    y_max: 28
     on_press:
       - if:
           condition:
@@ -56,10 +56,10 @@ binary_sensor:
     touchscreen_id: my_touchscreen
     name: "Touch Settings Gear"
     id: touch_settings_gear
-    x_min: 178
-    x_max: 231
-    y_min: 4
-    y_max: 31
+    x_min: 196
+    x_max: 239
+    y_min: 2
+    y_max: 28
     on_press:
       - if:
           condition:
@@ -87,10 +87,10 @@ binary_sensor:
     touchscreen_id: my_touchscreen
     name: "Touch Setpoint Down"
     id: touch_key_TEMP_DOWN
-    x_min: 8
-    x_max: 51
-    y_min: 108
-    y_max: 141
+    x_min: 10
+    x_max: 54
+    y_min: 102
+    y_max: 142
     on_press:
       - if:
           condition:
@@ -108,10 +108,10 @@ binary_sensor:
     touchscreen_id: my_touchscreen
     name: "Touch Setpoint Up"
     id: touch_key_TEMP_UP
-    x_min: 188
-    x_max: 231
-    y_min: 108
-    y_max: 141
+    x_min: 186
+    x_max: 230
+    y_min: 102
+    y_max: 142
     on_press:
       - if:
           condition:
@@ -130,8 +130,8 @@ binary_sensor:
     name: "Touch Smoke Pill 1"
     x_min: 21
     x_max: 58
-    y_min: 146
-    y_max: 173
+    y_min: 150
+    y_max: 180
     on_press:
       - if:
           condition:
@@ -147,8 +147,8 @@ binary_sensor:
     name: "Touch Smoke Pill 2"
     x_min: 62
     x_max: 99
-    y_min: 146
-    y_max: 173
+    y_min: 150
+    y_max: 180
     on_press:
       - if:
           condition:
@@ -164,8 +164,8 @@ binary_sensor:
     name: "Touch Smoke Pill 3"
     x_min: 103
     x_max: 140
-    y_min: 146
-    y_max: 173
+    y_min: 150
+    y_max: 180
     on_press:
       - if:
           condition:
@@ -181,8 +181,8 @@ binary_sensor:
     name: "Touch Smoke Pill 4"
     x_min: 144
     x_max: 181
-    y_min: 146
-    y_max: 173
+    y_min: 150
+    y_max: 180
     on_press:
       - if:
           condition:
@@ -198,8 +198,8 @@ binary_sensor:
     name: "Touch Smoke Pill 5"
     x_min: 185
     x_max: 222
-    y_min: 146
-    y_max: 173
+    y_min: 150
+    y_max: 180
     on_press:
       - if:
           condition:
@@ -216,8 +216,8 @@ binary_sensor:
     id: touch_key_AUGER
     x_min: 0
     x_max: 83
-    y_min: 248
-    y_max: 283
+    y_min: 268
+    y_max: 296
     on_press:
       - if:
           condition:
@@ -232,8 +232,8 @@ binary_sensor:
     id: touch_key_HOTROD
     x_min: 81
     x_max: 161
-    y_min: 248
-    y_max: 283
+    y_min: 268
+    y_max: 296
     on_press:
       - if:
           condition:
@@ -248,8 +248,8 @@ binary_sensor:
     id: touch_key_PRIME
     x_min: 157
     x_max: 239
-    y_min: 248
-    y_max: 283
+    y_min: 268
+    y_max: 296
     on_press:
       - if:
           condition:
